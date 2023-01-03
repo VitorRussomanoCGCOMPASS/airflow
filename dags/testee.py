@@ -9,32 +9,11 @@ from airflow.operators.python import ShortCircuitOperator
 # TODO : THE HOLIDAY FILE SHOULD NOT BE IN THE DAGS DIRECTORY.
 # TODO : THE IS_NOT_HOLIDAY WILL BE USED SEVERAL TIMES, IT SHOULD BE SOMEWHERE ELSE TO BE IMPORTED.
 
-def _is_not_holiday(ds) -> bool:
-    """
-    Check if execution date (ds) is a holiday or not
-
-    Parameters
-    ----------
-    ds : datetime
-        Execution date provided by airflow
-        
-    Returns
-    -------
-    bool
-        True
-
-    """    
-    with open("dags/holidays.yml", "r") as f:
-        logging.info(ds)
-        doc  = yaml.load(f, Loader=yaml.SafeLoader)
-        if (ds in doc['Data']):
-            return False
-        return True
-
+from custom_utils.is_not_holiday import _is_not_holiday
     
 
 with DAG(
-    dag_id="new",
+    dag_id="new2",
     start_date=datetime(2022, 12, 1),
     schedule_interval="0 0 * * 1-5",
     catchup=False,
