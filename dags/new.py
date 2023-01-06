@@ -7,7 +7,7 @@ from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import ShortCircuitOperator
 
-from operators.hol import _is_not_holiday
+from utils.hol import _is_not_holiday
 
 # COMPLETE :  CHECK FOR DS
 # COMPLETE : THE DATE FORMAT IS IMPORTANT IN THIS SCENARIO.

@@ -4,6 +4,7 @@ from dateutil import parser
 import logging
 
 
+# FIXME : HOLIDAY FILE SHOULD NOT BE IN DAGS
 def _is_not_holiday(ds) -> bool:
     """
     Check if execution date (ds) is a holiday or not
