@@ -1,0 +1,6 @@
+{
+    "DagId": "resultados_ima",
+    "endpoint":"'/feed/precos-indices/v1/indices-mais/resultados-ima'",
+    "output_path":"'C:/Users/Vitor Russomano/airflow/data/custom_operator/'{{macros.ds_add(ds,-1)}}'.json'"
+
+}
