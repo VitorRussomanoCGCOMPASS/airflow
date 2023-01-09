@@ -37,6 +37,8 @@ class AnbimaHook(BaseHook):
         token : str
             access token
         """
+        # TODO : MAYBE WE CAN CHECK IF THE TOKEN HAS EXPIRED.
+        
         payload = {"grant_type": "client_credentials"}
         headers = {
             "Content-Type": "application/json",

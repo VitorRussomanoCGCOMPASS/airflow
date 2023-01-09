@@ -31,6 +31,7 @@ class BritechHook(BaseHook):
         data: Union[str, dict, None] = None,
         headers: Union[dict, None] = None,
         extra_options: Union[dict, None] = None,
+        request_params: Union[dict, None] = None,
     ) -> requests.Response:
         """_summary_
 
@@ -40,13 +41,14 @@ class BritechHook(BaseHook):
             the endpoint to be called i.e. resource/v1/query?
         data : Union[str, dict, None], optional
             payload to be uploaded
-            query params
         headers : Union[str, dict, None], optional
             additional headers to be passed through as a dictionary
         extra_options : Union[dict, None], optional
             additional options to be used when executing the request
             i.e. {'check_response': False} to avoid checking raising exceptions on non
             2XX or 3XX status codes
+        request_params : Union[dict, None], optional
+            query string params
 
         Returns
         -------
@@ -68,7 +70,12 @@ class BritechHook(BaseHook):
         url = self.url_from_endpoint(endpoint, base_url)
 
         req = requests.Request(
-            self.method, url, params=data, headers=headers, auth=AUTH
+            self.method,
+            url,
+            data=data,
+            headers=headers,
+            params=request_params,
+            auth=AUTH,
         )
 
         prepped_request = session.prepare_request(req)
@@ -145,4 +152,3 @@ class BritechHook(BaseHook):
         except requests.exceptions.ConnectionError as ex:
             self.log.warning("%s Tenacity will retry to execute the operation", ex)
             raise ex
-
