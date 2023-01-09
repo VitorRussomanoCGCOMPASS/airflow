@@ -6,6 +6,10 @@ load_dotenv()
 
 ANBIMA_CLIENT_ID = os.getenv("ANBIMA_CLIENT_ID")
 
+# FIXME:  THE LOAD_DOTENV DOES NOT WORK.
+# TODO : EASIER TO jUST MOVE THE CONNECTION TO THE AIRFLOW DATABASE.
+
+
 
 ANBIMA_CONNECTION = Connection(
     conn_id="anbima_api",

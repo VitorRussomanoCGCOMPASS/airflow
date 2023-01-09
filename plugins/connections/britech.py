@@ -8,8 +8,7 @@ BRITECH_CONNECTION = Connection(
     description=None,
     login='webservice',
     password='Compass@1',
-    host='saas.britech.com.br/compass_ws/api/',
-    port=443,
+    host='saas.britech.com.br/compass_ws/api',
     schema='https'
 
 )
