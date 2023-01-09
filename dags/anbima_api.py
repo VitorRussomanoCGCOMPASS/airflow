@@ -117,7 +117,6 @@ class AnbimaHook(BaseHook):
         req = requests.Request(self.method, url, params=data, headers=headers)
 
         prepped_request = session.prepare_request(req)
-        print(prepped_request.url)
 
         self.log.info("Sending '%s' to url: %s", self.method, prepped_request.url)
         return self.run_and_check(session, prepped_request, extra_options)

@@ -1,4 +1,11 @@
 from airflow.models.connection import Connection
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+ANBIMA_CLIENT_ID = os.getenv("ANBIMA_CLIENT_ID")
+
 
 ANBIMA_CONNECTION = Connection(
     conn_id="anbima_api",

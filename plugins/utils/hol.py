@@ -4,7 +4,6 @@ from dateutil import parser
 import logging
 
 
-# FIXME : HOLIDAY FILE SHOULD NOT BE IN DAGS
 def _is_not_holiday(ds) -> bool:
     """
     Check if execution date (ds) is a holiday or not
@@ -22,7 +21,7 @@ def _is_not_holiday(ds) -> bool:
         True
 
     """
-    with open("dags/holidays.yml", "r") as f:
+    with open("plugins/utils/holidays.yml", "r") as f:
 
         doc = yaml.load(f, Loader=yaml.SafeLoader)
         ds = datetime.datetime.strptime(ds, "%Y-%m-%d")
