@@ -7,13 +7,14 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.models.baseoperator import chain
-from hooks.britech import BritechHook
 
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
 
-# TODO : POSTS
+# TODO : ANBIMA DATABASE POST
+# TODO : BRITECH POST
+
 
 with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     is_not_holiday = PythonOperator(
