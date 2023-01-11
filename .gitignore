@@ -2,3 +2,4 @@ venv
 logs
 .vscode
 extra
+.env

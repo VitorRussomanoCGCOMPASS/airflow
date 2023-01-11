@@ -9,16 +9,15 @@ from airflow.hooks.base import BaseHook
 
 
 class AnbimaHook(BaseHook):
-    def __init__(self):  # , conn_id = 'anbima_api'
+    def __init__(self, conn_id="anbima_api"):  # , conn_id = 'anbima_api'
         super().__init__()
         self._session = None
         self.method = "GET"
-        self.config = ANBIMA_CONNECTION
-        # self._conn_id = conn_id
+        self._conn_id = conn_id
 
     def _get_conn(self):
         if self._session is None:
-
+            
             schema = self.config.schema
             host = self.config.host
             port = self.config.port
@@ -38,7 +37,7 @@ class AnbimaHook(BaseHook):
             access token
         """
         # TODO : MAYBE WE CAN CHECK IF THE TOKEN HAS EXPIRED.
-        
+
         payload = {"grant_type": "client_credentials"}
         headers = {
             "Content-Type": "application/json",
@@ -83,8 +82,12 @@ class AnbimaHook(BaseHook):
         """
 
         token = self.get_token()
-        client_id = self.config.login  # self._conn_id
 
+        config = self.get_connection(self._conn_id)
+        self.config = config
+
+        client_id = config.login
+        
         headers = headers or {}
         headers.update(
             {
@@ -180,8 +183,3 @@ class AnbimaHook(BaseHook):
         except requests.exceptions.ConnectionError as ex:
             self.log.warning("%s Tenacity will retry to execute the operation", ex)
             raise ex
-
-
-
-
-

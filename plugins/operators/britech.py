@@ -60,4 +60,4 @@ class BritechOperator(BaseOperator):
         os.makedirs(output_dir, exist_ok=True)
 
         with open(self.output_path, "w") as file_:
-            json.dump(response.text, fp=file_)
+            json.dump(response.json(), fp=file_)

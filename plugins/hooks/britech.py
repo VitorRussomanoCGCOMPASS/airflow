@@ -9,17 +9,16 @@ from airflow.hooks.base import BaseHook
 
 
 class BritechHook(BaseHook):
-    def __init__(self, context=None, method="GET"):
+    def __init__(self, context=None, method="GET", conn_id="britech_api"):
         super().__init__(context)
         self._session = None
         self.method = method
-        self.config = BRITECH_CONNECTION
+        self._conn_id = conn_id
 
     def _get_conn(self):
         if self._session is None:
             schema = self.config.schema
             host = self.config.host
-            port = self.config.port
 
             self._base_url = f"{schema}://{host}"
             self._session = requests.Session()
@@ -54,9 +53,11 @@ class BritechHook(BaseHook):
         -------
         requests.Response
         """
+        config = self.get_connection(self._conn_id)
+        self.config = config
 
-        client_id = self.config.login  # self._conn_id
-        client_pass = self.config.password
+        client_id = config.login  # self._conn_id
+        client_pass = config.password
 
         AUTH = HTTPBasicAuth(client_id, client_pass)
 
