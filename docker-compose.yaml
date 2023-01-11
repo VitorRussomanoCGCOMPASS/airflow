@@ -45,12 +45,12 @@ x-airflow-common:
   # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
   image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:2.5.0}
+
   # build: .
   environment:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
@@ -61,6 +61,9 @@ x-airflow-common:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
+    - ./include:/airflow/include
+  
+    
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -226,7 +229,7 @@ services:
         mkdir -p /sources/logs /sources/dags /sources/plugins
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
         exec /entrypoint airflow version
-    # yamllint enable rule:line-length
+    # yamllint enable rule:line-length\
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_UPGRADE: 'true'
@@ -237,6 +240,9 @@ services:
     user: "0:0"
     volumes:
       - .:/sources
+      
+
+
 
   airflow-cli:
     <<: *airflow-common
@@ -274,3 +280,7 @@ services:
 
 volumes:
   postgres-db-volume:
+
+
+
+

@@ -9,11 +9,11 @@ from airflow.utils.task_group import TaskGroup
 from airflow.models.baseoperator import chain
 
 
+
+
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
-
-# TODO : ANBIMA DATABASE POST
-# TODO : BRITECH POST
+from airflow.utils.context import Context
 
 
 with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
@@ -36,10 +36,11 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         task_id="fetch_vna",
         endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
         headers={"data": "{{ macros.ds_add(ds, -1) }}"},
-        output_path="C:/Users/Vitor Russomano/airflow/data/custom_operator/'{{macros.ds_add(ds,-1)}}'.json",
+        output_path="C:/Users/Vitor Russomano/airflow/data/anbima/'vna_{{macros.ds_add(ds,-1)}}'.json",
     )
 
-    post_vna = EmptyOperator(task_id="post_vna")
+    post_vna = EmptyOperator(
+        task_id='post_vna')
 
     wait_debentures = AnbimaSensor(
         task_id="wait_debentures",
@@ -56,7 +57,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         task_id="fetch_debentures",
         endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
         headers={"data": "{{ macros.ds_add(ds, -1) }}"},
-        output_path="C:/Users/Vitor Russomano/airflow/data/custom_operator/'{{macros.ds_add(ds,-1)}}'.json",
+        output_path="C:/Users/Vitor Russomano/airflow/data/anbima/'debentures_{{macros.ds_add(ds,-1)}}'.json",
     )
 
     post_debentures = EmptyOperator(task_id="post_debentures")
@@ -76,7 +77,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         task_id="fetch_cricra",
         endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
         headers={"data": "{{ macros.ds_add(ds, -1) }}"},
-        output_path="C:/Users/Vitor Russomano/airflow/data/custom_operator/'{{macros.ds_add(ds,-1)}}'.json",
+        output_path="C:/Users/Vitor Russomano/airflow/data/anbima/'cricra_{{macros.ds_add(ds,-1)}}'.json",
     )
 
     post_cricra = EmptyOperator(task_id="post_cricra")
@@ -96,7 +97,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         task_id="fetch_ima",
         endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
         headers={"data": "{{ macros.ds_add(ds, -1) }}"},
-        output_path="C:/Users/Vitor Russomano/airflow/data/custom_operator/'{{macros.ds_add(ds,-1)}}'.json",
+        output_path="C:/Users/Vitor Russomano/airflow/data/anbima/'ima_{{macros.ds_add(ds,-1)}}'.json", # /opt/data/
     )
 
     post_ima = EmptyOperator(task_id="post_ima")
@@ -105,9 +106,10 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         read = EmptyOperator(task_id="read")
         transform = EmptyOperator(task_id="transform")
         post = EmptyOperator(task_id="post")
-
+        
         read.set_downstream(transform)
         transform.set_downstream(post)
+
 
     end = EmptyOperator(task_id="end")
 
@@ -120,4 +122,5 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     )
 
     chain([wait_ima, wait_vna], [fetch_ima, fetch_vna], yield_ima_b)
-    chain([fetch_ima, fetch_vna], [post_ima, post_vna],end)
+    chain([fetch_ima, fetch_vna], [post_ima, post_vna], end)
+ 

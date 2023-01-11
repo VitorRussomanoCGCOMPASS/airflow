@@ -1,7 +1,7 @@
 from typing import Callable, Union
 import json
 
-from hooks.britech import BritechHook 
+from hooks.britech import BritechHook
 
 from airflow.exceptions import AirflowException
 from airflow.utils.operator_helpers import determine_kwargs
@@ -12,11 +12,12 @@ import os
 
 
 class BritechOperator(BaseOperator):
-    template_fields =('endpoint','data','headers','output_path')
+    template_fields = ("endpoint", "data", "headers", "output_path", "request_params")
 
     def __init__(
         self,
         output_path: str,
+        request_params: Union[dict, None] = None,
         endpoint: Union[None, str] = None,
         data: Union[str, dict, None] = None,
         headers: Union[dict, None] = None,
@@ -28,6 +29,7 @@ class BritechOperator(BaseOperator):
         super(BritechOperator, self).__init__(**kwargs)
         self.endpoint = endpoint
         self.headers = headers or {}
+        self.request_params = request_params or {}
         self.extra_options = extra_options or {}
         self.response_check = response_check
         self.log_response = log_response
@@ -42,6 +44,7 @@ class BritechOperator(BaseOperator):
             endpoint=self.endpoint,
             data=self.data,
             headers=self.headers,
+            request_params=self.request_params,
             extra_options=self.extra_options,
         )
 
@@ -58,4 +61,3 @@ class BritechOperator(BaseOperator):
 
         with open(self.output_path, "w") as file_:
             json.dump(response.text, fp=file_)
-
