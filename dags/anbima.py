@@ -1,12 +1,16 @@
 from operators.anbima import AnbimaOperator
 from pendulum import datetime
 from sensors.anbima import AnbimaSensor
-from utils.hol import _is_not_holiday
+
 from airflow import DAG
-from airflow.operators.python import PythonOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.utils.task_group import TaskGroup
 from airflow.models.baseoperator import chain
+
+
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import PythonOperator
+from airflow.utils.task_group import TaskGroup
+from include.is_not_holiday import _is_not_holiday
+
 
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
@@ -99,19 +103,14 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
 
     end = EmptyOperator(task_id="end")
 
-    with TaskGroup(group_id="yield-ima-b") as yield_ima_b:
-        calculate = EmptyOperator(task_id="calculate")
-        post = EmptyOperator(task_id="post")
-
-        calculate.set_downstream(post)
-
     with TaskGroup(group_id="britech-indice-data") as britech:
+        post_yield_ima_b = EmptyOperator(task_id='post-yield-ima-b')
+
         collect_id = EmptyOperator(task_id="collect_ids")
         get = EmptyOperator(task_id="get")
         store = EmptyOperator(task_id="store")
 
-        collect_id.set_downstream(get)
-        get.set_downstream(store)
+        chain(post_yield_ima_b,collect_id,get,store)
 
     is_not_holiday.set_downstream([wait_debentures, wait_vna, wait_ima, wait_cricra])
 
@@ -122,9 +121,9 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         end,
     )
 
-    chain([wait_ima, wait_vna], [fetch_ima, fetch_vna], yield_ima_b)
+    chain([wait_ima, wait_vna], [fetch_ima, fetch_vna], britech)
     chain([fetch_ima, fetch_vna], [store_ima, store_vna], end)
 
-    yield_ima_b.set_downstream(britech)
 
-from airflow.models.connection import Connection
+
+# TODO : WRITE POST VNA

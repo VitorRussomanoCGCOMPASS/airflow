@@ -6,14 +6,9 @@ from pendulum import datetime
 import logging 
 
 def write_to_data():
+    import include
+    
 
-
-
-
-    from airflow.hooks.base import BaseHook
-
-    bima = BaseHook().get_connection('anbima_api')
-    logging.info(bima.conn_id)
 
 
 

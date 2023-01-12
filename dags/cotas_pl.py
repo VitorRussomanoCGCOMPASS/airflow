@@ -2,7 +2,7 @@ import json
 
 from operators.britech import BritechOperator
 from pendulum import datetime
-from utils.hol import _is_not_holiday
+from include.is_not_holiday import _is_not_holiday
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
@@ -49,22 +49,14 @@ def funds_append(file_path: str):
     return None
 
 
-
-
-def render_template(template_path: str, output_path: str):
+def render_template(
+    template_path: str, output_path: str, funds_path: str, indices_path: str
+) -> None:
 
     import jinja2
 
-    # FIXME : READING DATA
-    with open(
-        r"C:\Users\Vitor Russomano\airflow\data\britech\rentabilidade\fundos_2023-01-11.json"
-    ) as fcc_file:
-        funds = json.load(fcc_file)
 
-    with open(
-        r"C:\Users\Vitor Russomano\airflow\data\britech\rentabilidade\indices_2023-01-11.json",
-        "r",
-    ) as fcc_file:
+    with open(indices_path, "r") as fcc_file:
         indices = json.load(fcc_file)
 
     templateLoader = jinja2.FileSystemLoader(searchpath=template_path)
@@ -79,7 +71,7 @@ def render_template(template_path: str, output_path: str):
     TEMPLATE_FILE = "cotas_pl_template.html"
     template = templateEnv.get_template(TEMPLATE_FILE)
 
-    rendered_template = template.render(indices=indices, funds=funds)
+    rendered_template = template.render(indices=indices)  # funds = funds
     with open(output_path, "w") as fh:
         fh.write(rendered_template)
 
@@ -113,17 +105,15 @@ with DAG(
             "idCarteiras": "10 , 49 , 3 , 32 , 17 , 30 , 42",
             "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') ) }}",
         },
-        output_path="/opt/airflow/data/britech/rentabilidade/fundos_'{{macros.ds_add(ds,-1)}}'.json",
+        output_path="/opt/airflow/data/britech/rentabilidade/funds_{{macros.ds_add(ds,-1)}}.json",
     )
-
-    # TODO : CHANGE OUTPUT PATH TO INCLUDE DATE
 
     db_fund_info = PythonOperator(
         task_id="db_fund_info",
         python_callable=funds_append,
         provide_context=True,
         op_kwargs={
-            "file_path": "/opt/airflow/data/britech/rentabilidade/fundos_'{{macros.ds_add(ds,-1)}}'.json"
+            "file_path": "/opt/airflow/data/britech/rentabilidade/funds_{{macros.ds_add(ds,-1)}}.json"
         },
     )
 
@@ -131,9 +121,10 @@ with DAG(
         task_id="render_to_template",
         python_callable=render_template,
         op_kwargs={
-            "template_path": "C:/Users/Vitor Russomano/airflow/plugins/utils/",
-            "output_path": "C:/Users/Vitor Russomano/airflow/my_new_file_'{{ds}}'.html",
-            "funds_file": "C:/Users/Vitor Russomano/ariflow/data/britech/rentabilidade/fundos_'{{macros.ds_add(ds,-1)}}'.json",
+            "template_path": "/opt/airflow/include/",
+            "output_path": "/opt/airflow/data/mail-template/{{ds}}.html",
+            "funds_path": "/opt/airflow/data/britech/rentabilidade/funds_{{ds}}.html",
+            "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.html",
         },
         provide_context=True,
     )
@@ -147,6 +138,7 @@ with DAG(
     # COMPLETE : GET REQUESTS FUND RETURNS
     # COMPLETE: GET REQUESTS INDICES RETURNS
 
-    # TODO : READ THE DATA
+    # COMPLETE: READ THE DATA
     # COMPLETE: READ TEMPLATE AND CHANGE THE VALUES
-    # TODO : SEND THE EMAIL USING SENDGRID (READING CONTACTS FROM DATABASE)
+    # TODO : READ DATABASE AND GET EXTRA INFO
+    # TODO : SEND THE EMAIL USING SENDGRID (READING CONTACTS FROM DATABASE

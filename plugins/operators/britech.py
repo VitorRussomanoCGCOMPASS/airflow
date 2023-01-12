@@ -24,9 +24,11 @@ class BritechOperator(BaseOperator):
         response_check: Union[Callable[..., bool], None] = None,
         extra_options: Union[dict, None] = None,
         log_response: bool = False,
+        method: str = "GET",
         **kwargs,
     ):
         super(BritechOperator, self).__init__(**kwargs)
+        self.method = method
         self.endpoint = endpoint
         self.headers = headers or {}
         self.request_params = request_params or {}
@@ -37,7 +39,7 @@ class BritechOperator(BaseOperator):
         self.output_path = output_path
 
     def execute(self, context):
-        hook = BritechHook()
+        hook = BritechHook(method=self.method)
         self.log.info("Calling HTTP method")
 
         response = hook.run(
@@ -55,9 +57,12 @@ class BritechOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        self.log.info(f"Writing to {self.output_path}")
-        output_dir = os.path.dirname(self.output_path)
-        os.makedirs(output_dir, exist_ok=True)
+        if self.method == "GET":
+            self.log.info(f"Writing to {self.output_path}")
+            output_dir = os.path.dirname(self.output_path)
+            os.makedirs(output_dir, exist_ok=True)
 
-        with open(self.output_path, "w") as file_:
-            json.dump(response.json(), fp=file_)
+            with open(self.output_path, "w") as file_:
+                json.dump(response.json(), fp=file_)
+            
+        return response.text
