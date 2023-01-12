@@ -37,6 +37,7 @@
 #                                Default: ''
 #
 # Feel free to modify this file to suit your needs.
+# https://github.com/anilkulkarni87/airflow-docker#getting_started
 ---
 version: '3'
 x-airflow-common:

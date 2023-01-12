@@ -1,7 +1,6 @@
 from typing import Any, Union
 
 import requests
-from connections.britech import BRITECH_CONNECTION
 from requests.auth import HTTPBasicAuth
 
 from airflow.exceptions import AirflowException
@@ -31,6 +30,7 @@ class BritechHook(BaseHook):
         headers: Union[dict, None] = None,
         extra_options: Union[dict, None] = None,
         request_params: Union[dict, None] = None,
+        json: Union[dict, None] = None,
     ) -> requests.Response:
         """_summary_
 
@@ -54,13 +54,14 @@ class BritechHook(BaseHook):
         requests.Response
         """
         config = self.get_connection(self._conn_id)
+        # config = BRITECH_CONNECTION
         self.config = config
 
-        client_id = config.login  # self._conn_id
+        client_id= config.login # self._conn_id
         client_pass = config.password
 
-        AUTH = HTTPBasicAuth(client_id, client_pass)
-
+            
+        AUTH = HTTPBasicAuth(client_id, client_pass) # type: ignore
         headers = headers or {}
 
         session, base_url = self._get_conn()
@@ -74,6 +75,7 @@ class BritechHook(BaseHook):
             self.method,
             url,
             data=data,
+            json=json,
             headers=headers,
             params=request_params,
             auth=AUTH,

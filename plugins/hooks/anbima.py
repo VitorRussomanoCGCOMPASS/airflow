@@ -80,11 +80,10 @@ class AnbimaHook(BaseHook):
         -------
         requests.Response
         """
-
-        token = self.get_token()
-
         config = self.get_connection(self._conn_id)
         self.config = config
+
+        token = self.get_token()
 
         client_id = config.login
         

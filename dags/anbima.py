@@ -11,8 +11,6 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 from utils.is_not_holiday import _is_not_holiday
 
-from operators.britech import BritechOperator
-
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
@@ -105,7 +103,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     end = EmptyOperator(task_id="end")
 
     with TaskGroup(group_id="yield-ima-b") as yield_ima_b:
-    
+
         calculate = EmptyOperator(task_id="calculate")
         post = EmptyOperator(task_id="post")
 
@@ -131,4 +129,5 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
 
     yield_ima_b.set_downstream(britech)
 
+# TODO : CALCULATE YIELD IMA B (IMA-B YIELD FROM ; VNA NTN-B)
 # TODO : WRITE POST YIELD IMA B

@@ -13,7 +13,6 @@ def _is_not_holiday(ds) -> bool:
     ds : str
         Execution date provided by airflow
 
-    # FIXME : yesterday_ds_nodash -> Indicates yesterday.
 
     Returns
     -------
@@ -21,7 +20,7 @@ def _is_not_holiday(ds) -> bool:
         True
 
     """
-    with open("utils/holidays.yml", "r") as f:
+    with open("plugins/utils/holidays.yml", "r") as f:
 
         doc = yaml.load(f, Loader=yaml.SafeLoader)
         ds = datetime.datetime.strptime(ds, "%Y-%m-%d")

@@ -16,7 +16,6 @@ default_args = {
 }
 
 
-
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
     Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
@@ -56,7 +55,6 @@ def render_template(
 ) -> None:
 
     import jinja2
-
 
     with open(indices_path, "r") as fcc_file:
         indices = json.load(fcc_file)
