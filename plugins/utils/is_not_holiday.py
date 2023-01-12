@@ -21,7 +21,7 @@ def _is_not_holiday(ds) -> bool:
         True
 
     """
-    with open("/opt/airflow/include/holidays.yml", "r") as f:
+    with open("utils/holidays.yml", "r") as f:
 
         doc = yaml.load(f, Loader=yaml.SafeLoader)
         ds = datetime.datetime.strptime(ds, "%Y-%m-%d")

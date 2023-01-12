@@ -9,8 +9,9 @@ from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
-from include.is_not_holiday import _is_not_holiday
+from utils.is_not_holiday import _is_not_holiday
 
+from operators.britech import BritechOperator
 
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
@@ -103,14 +104,18 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
 
     end = EmptyOperator(task_id="end")
 
-    with TaskGroup(group_id="britech-indice-data") as britech:
-        post_yield_ima_b = EmptyOperator(task_id='post-yield-ima-b')
+    with TaskGroup(group_id="yield-ima-b") as yield_ima_b:
+    
+        calculate = EmptyOperator(task_id="calculate")
+        post = EmptyOperator(task_id="post")
 
+    with TaskGroup(group_id="britech-indice-data") as britech:
         collect_id = EmptyOperator(task_id="collect_ids")
         get = EmptyOperator(task_id="get")
         store = EmptyOperator(task_id="store")
 
-        chain(post_yield_ima_b,collect_id,get,store)
+        collect_id.set_downstream(get)
+        get.set_downstream(store)
 
     is_not_holiday.set_downstream([wait_debentures, wait_vna, wait_ima, wait_cricra])
 
@@ -121,9 +126,9 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         end,
     )
 
-    chain([wait_ima, wait_vna], [fetch_ima, fetch_vna], britech)
+    chain([wait_ima, wait_vna], [fetch_ima, fetch_vna], yield_ima_b)
     chain([fetch_ima, fetch_vna], [store_ima, store_vna], end)
 
+    yield_ima_b.set_downstream(britech)
 
-
-# TODO : WRITE POST VNA
+# TODO : WRITE POST YIELD IMA B

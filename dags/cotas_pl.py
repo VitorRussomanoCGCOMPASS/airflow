@@ -2,17 +2,19 @@ import json
 
 from operators.britech import BritechOperator
 from pendulum import datetime
-from include.is_not_holiday import _is_not_holiday
+from utils.is_not_holiday import _is_not_holiday
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
 
+
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1),
 }
+
 
 
 def splitdsformat(value) -> str:
@@ -91,7 +93,7 @@ with DAG(
     fetch_indices_return = BritechOperator(
         task_id="fetch_indices_return",
         endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
-        data={
+        request_params={
             "idIndices": "1 , 26 , 70 , 102 , 1011",
             "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') ) }}",
         },
@@ -101,7 +103,7 @@ with DAG(
     fetch_funds_return = BritechOperator(
         task_id="fetch_funds_return",
         endpoint="/Fundo/BuscaRentabilidadeFundos",
-        data={
+        request_params={
             "idCarteiras": "10 , 49 , 3 , 32 , 17 , 30 , 42",
             "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') ) }}",
         },
