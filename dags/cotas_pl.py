@@ -8,6 +8,7 @@ from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
+from sensors.britech import BritechIndicesSensor
 
 
 default_args = {
@@ -88,6 +89,13 @@ with DAG(
         task_id="is_not_holiday", python_callable=_is_not_holiday, provide_context=True
     )
 
+    indices_sensor = BritechIndicesSensor(
+        task_id="indice_sensor",
+        request_params={"idIndices": "1 , 26 , 70 , 102 , 1011"},
+    )
+
+    funds_sensor = EmptyOperator(task_id="funds_sensor")
+
     fetch_indices_return = BritechOperator(
         task_id="fetch_indices_return",
         endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
@@ -108,8 +116,8 @@ with DAG(
         output_path="/opt/airflow/data/britech/rentabilidade/funds_{{macros.ds_add(ds,-1)}}.json",
     )
 
-    db_fund_info = PythonOperator(
-        task_id="db_fund_info",
+    append_fund_info = PythonOperator(
+        task_id="append_fund_info",
         python_callable=funds_append,
         provide_context=True,
         op_kwargs={
@@ -131,14 +139,19 @@ with DAG(
 
     send_email = EmptyOperator(task_id="send_email")
 
-    is_not_holiday.set_downstream([fetch_indices_return, fetch_funds_return])
-    fetch_funds_return.set_downstream(db_fund_info)
-    chain([fetch_indices_return, db_fund_info], render_to_template, send_email)
+    chain(
+        is_not_holiday,
+        [funds_sensor, indices_sensor],
+        [fetch_funds_return, fetch_indices_return],
+    )
+
+    fetch_funds_return.set_downstream(append_fund_info)
+
+    chain([append_fund_info, fetch_indices_return], render_to_template, send_email)
 
     # COMPLETE : GET REQUESTS FUND RETURNS
     # COMPLETE: GET REQUESTS INDICES RETURNS
 
     # COMPLETE: READ THE DATA
     # COMPLETE: READ TEMPLATE AND CHANGE THE VALUES
-    # TODO : READ DATABASE AND GET EXTRA INFO
     # TODO : SEND THE EMAIL USING SENDGRID (READING CONTACTS FROM DATABASE

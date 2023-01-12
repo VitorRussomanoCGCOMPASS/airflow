@@ -29,7 +29,3 @@ with DAG("testando_post", schedule="@daily", default_args=default_args, catchup=
 
 
 
-import json
-
-with open(r'C:\Users\Vitor Russomano\airflow\data\anbima\vna_2023-01-11.json', 'r') as _file:
-    a = json.load(_file)

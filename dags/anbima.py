@@ -100,10 +100,9 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
 
     store_ima = EmptyOperator(task_id="store_ima")
 
-    end = EmptyOperator(task_id="end")
 
     with TaskGroup(group_id="yield-ima-b") as yield_ima_b:
-
+        
         calculate = EmptyOperator(task_id="calculate")
         post = EmptyOperator(task_id="post")
 
@@ -115,19 +114,17 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         collect_id.set_downstream(get)
         get.set_downstream(store)
 
-    is_not_holiday.set_downstream([wait_debentures, wait_vna, wait_ima, wait_cricra])
-
     chain(
-        [wait_cricra, wait_debentures],
-        [fetch_cricra, fetch_debentures],
-        [store_cricra, store_debentures],
-        end,
+        is_not_holiday,
+        [wait_cricra, wait_debentures, wait_ima, wait_vna],
+        [fetch_cricra, fetch_debentures, fetch_ima, fetch_vna],
+        [store_cricra, store_debentures , store_ima, store_vna],
     )
 
-    chain([wait_ima, wait_vna], [fetch_ima, fetch_vna], yield_ima_b)
-    chain([fetch_ima, fetch_vna], [store_ima, store_vna], end)
-
+    yield_ima_b.set_upstream([store_ima, store_vna])
     yield_ima_b.set_downstream(britech)
+
+# TODO : PYTHONPATH TO INCLUDE AND TO MODELS!
 
 # TODO : CALCULATE YIELD IMA B (IMA-B YIELD FROM ; VNA NTN-B)
 # TODO : WRITE POST YIELD IMA B

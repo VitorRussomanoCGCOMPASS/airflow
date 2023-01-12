@@ -20,9 +20,10 @@
 # Run airflow command in container
 #
 
+
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 set -euo pipefail
-
+export PYTHONPATH="${PYTHONPATH}:/c/User/Vitor Russomano/airflow/include"
 export COMPOSE_FILE=${PROJECT_DIR}/docker-compose.yaml
 exec docker-compose run airflow-worker "${@}"
