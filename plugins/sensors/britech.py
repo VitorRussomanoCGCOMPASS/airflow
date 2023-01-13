@@ -27,10 +27,31 @@ class BritechIndicesSensor(BaseSensorOperator):
         self.data = data
 
     def poke(self, context) -> bool:
+        """
+        Pokes endpoint BuscaCotacaoIndicePeriodo.
+        Checking if the indice is available within the date provided.
+        Requires ids in the request_params along with the date.
+
+
+        Returns
+        -------
+        bool
+            True if the indice is available for the day. False otherwise.
+
+        Raises
+        ------
+        Exception
+            If the ids are not in the specified format. Required that the ids must be split by comma.
+            e.g. '1 , 2 , 3'
+
+        exc
+            404 error
+
+        """
         hook = BritechHook()
         self.log.info("Poking: %s", self.endpoint)
 
-        ids = self.request_params.get("idIndices")
+        ids = self.request_params.get("idIndice")
 
         if ids is None:
             raise Exception(
@@ -57,7 +78,7 @@ class BritechIndicesSensor(BaseSensorOperator):
 
             ids = ids.split(",")
 
-            if  len(response.json()) < len(ids):
+            if len(response.json()) < len(ids):
                 return False
 
         except AirflowException as exc:
@@ -73,6 +94,7 @@ class BritechFundsSensor(BaseSensorOperator):
     template_fields = ("endpoint", "headers", "request_params")
 
     """
+
 
     Provided with 'cnpj' and 'dataReferencia' in request_params. We use the ConsultaStatusCarteira
     in BRITECH API to check the fund status.
@@ -99,55 +121,94 @@ class BritechFundsSensor(BaseSensorOperator):
         self.data = data
 
     def poke(self, context):
+        """
+        Pokes the ConsultaStatusCarteira endpoint.
+        Must have cnpj or id along with date.
+
+        Returns
+        -------
+        bool:
+
+        Raises
+        ------
+        Exception
+            Incorrect format of ids or insufficient parameters in request_params.
+
+        exc
+            404 error
+        """
+
         hook = BritechHook()
         self.log.info("Poking: %s", self.endpoint)
 
         # TODO : GET IN THE DATABASE
         # TODO : CHECK IF LEN OF IDS AND CNPjS ARE SAME
-        # TODO : CALL FOR BRITECH ENDPOINT
+        # COMPLETE : CALL FOR BRITECH ENDPOINT
 
-        ids = self.request_params.pop("id")
+        if "ids" in self.request_params:
+            ids = self.request_params.pop("id")
 
-        if ids is None:
-            raise Exception(
-                "The funds must be specified by a list of ids separated by comma."
-            )
+            if ids is None:
+                raise Exception(
+                    "The funds must be specified by a list of ids separated by comma."
+                )
 
-        ids = "".join(ids.split())
-        if ids == ";":
-            raise Exception(
-                "The indices must be specified by a list of ids separated by comma."
-            )
-        
+            ids = "".join(ids.split())
+            if ids == ";":
+                raise Exception(
+                    "The funds must be specified by a list of ids separated by comma."
+                )
+            cnpjs = [1, 2, 3, 4]
+            self.request_params["cnpj"] = cnpjs
 
-        try:
-            response = hook.run(
-                endpoint=self.endpoint,
-                data=self.data,
-                headers=self.headers,
-                extra_options=self.extra_options,
-                request_params=self.request_params,
-            )
-            if self.response_check:
-                kwargs = determine_kwargs(self.response_check, [response], context)
-                return self.response_check(response, **kwargs)
-        except AirflowException as exc:
-            if str(exc).startswith("404"):
-                return False
+        if "cnpj" in self.request_params:
+            cnpjs = self.request_params["cnpj"]
 
-            raise exc
+            if isinstance(cnpjs, str):
+                cnpjs = cnpjs.split(",")
 
-        return True
+            for cnpj in cnpjs:
+                request_params = self.request_params
+                request_params.update({"cnpj": cnpj})
 
+                try:
+                    response = hook.run(
+                        endpoint=self.endpoint,
+                        data=self.data,
+                        headers=self.headers,
+                        extra_options=self.extra_options,
+                        request_params=request_params,
+                    )
+                    if self.response_check:
+                        kwargs = determine_kwargs(
+                            self.response_check, [response], context
+                        )
+                        return self.response_check(response, **kwargs)
 
-""" 
+                    data = response.json()
+                    status = data.get("Status")
+                    error = None if data.get("Erro") not in [1, 3] else data.get("Erro")
+    
+                    if error:
+                        self.log.info(
+                            "Fund with cnpj: %s has return error code : %s", cnpj, error
+                        )
+                        return False
+    
+                    if status != "Aberto":
+                        self.log.info(
+                            "Fund with cnpj: %s has status : %s", cnpj, status
+                        )
+                        return False
+                
+                except AirflowException as exc:
+                    if str(exc).startswith("404"):
+                        return False
 
+                    raise exc
 
-        if 'idIndice' in self.request_params:
-            id = self.request_params.get('idIndice')
-            if id is not None:
-                id = "".join(id.split(','))
-                id = id.split(',')
-                self.request_params.update({'idIndice':id})
+            return True
 
- """
+        raise Exception(
+            "ids or cnpj must be specified in the request_params along with date."
+        )

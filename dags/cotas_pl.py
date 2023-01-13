@@ -9,6 +9,7 @@ from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
 from sensors.britech import BritechIndicesSensor
+from sensors.britech import BritechFundsSensor
 
 
 default_args = {
@@ -91,17 +92,27 @@ with DAG(
 
     indices_sensor = BritechIndicesSensor(
         task_id="indice_sensor",
-        request_params={"idIndices": "1 , 26 , 70 , 102 , 1011"},
+        request_params={
+            "idIndice": "1 , 26 , 70 , 102 , 1011",
+            "DataInicio": "{{macros.ds_add(ds,-1)}}",
+            "DataFim": "{{macros.ds_add(ds,-1)}}",
+        },
     )
 
-    funds_sensor = EmptyOperator(task_id="funds_sensor")
+    funds_sensor = BritechFundsSensor(
+        task_id="funds_sensor",
+        request_params={
+            "cnpj": "35399404000184,40938560000106",
+            "data": "{{ds}}",
+        },
+    )
 
     fetch_indices_return = BritechOperator(
         task_id="fetch_indices_return",
         endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
         request_params={
             "idIndices": "1 , 26 , 70 , 102 , 1011",
-            "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') ) }}",
+            "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') }}",
         },
         output_path="/opt/airflow/data/britech/rentabilidade/indices_'{{macros.ds_add(ds,-1)}}'.json",
     )
@@ -111,7 +122,7 @@ with DAG(
         endpoint="/Fundo/BuscaRentabilidadeFundos",
         request_params={
             "idCarteiras": "10 , 49 , 3 , 32 , 17 , 30 , 42",
-            "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') ) }}",
+            "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') }}",
         },
         output_path="/opt/airflow/data/britech/rentabilidade/funds_{{macros.ds_add(ds,-1)}}.json",
     )
@@ -151,7 +162,6 @@ with DAG(
 
     # COMPLETE : GET REQUESTS FUND RETURNS
     # COMPLETE: GET REQUESTS INDICES RETURNS
-
     # COMPLETE: READ THE DATA
     # COMPLETE: READ TEMPLATE AND CHANGE THE VALUES
     # TODO : SEND THE EMAIL USING SENDGRID (READING CONTACTS FROM DATABASE
