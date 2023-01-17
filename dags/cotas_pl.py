@@ -106,6 +106,13 @@ with DAG(
             "data": "{{ds}}",
         },
     )
+    funds_sensor_2 = EmptyOperator(task_id='funds_sensor_2')
+
+    fetch_funds_return_2= EmptyOperator(task_id='fetch_funds_return_2')
+    append_fund_info_2= EmptyOperator(task_id='append_fund_info_2')
+    render_template_2= EmptyOperator(task_id='render_template_2')
+    send_email_2= EmptyOperator(task_id='send_email_2')
+
 
     fetch_indices_return = BritechOperator(
         task_id="fetch_indices_return",
@@ -157,7 +164,8 @@ with DAG(
     )
 
     fetch_funds_return.set_downstream(append_fund_info)
-
+    
+    chain(funds_sensor,funds_sensor_2,fetch_funds_return_2,append_fund_info_2,render_template_2,send_email_2)
     chain([append_fund_info, fetch_indices_return], render_to_template, send_email)
 
     # COMPLETE : GET REQUESTS FUND RETURNS
@@ -165,3 +173,4 @@ with DAG(
     # COMPLETE: READ THE DATA
     # COMPLETE: READ TEMPLATE AND CHANGE THE VALUES
     # TODO : SEND THE EMAIL USING SENDGRID (READING CONTACTS FROM DATABASE
+
