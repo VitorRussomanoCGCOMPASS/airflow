@@ -1,3 +1,13 @@
 FROM apache/airflow:2.5.0-python3.10
-ENV AIRFLOW_HOME="C:/Users/Vitor Russomano/airflow"
-ENV PYTHONPATH="${PYTHONPATH}:/include"
+USER root
+
+RUN apt-get update
+RUN apt-get -y install git
+
+COPY requirements.txt /requirements.txt
+
+USER airflow
+RUN pip install --user --upgrade pip
+RUN pip install --no-cache-dir --user -r /requirements.txt
+
+# docker build . --tag extending_airflow:latest
