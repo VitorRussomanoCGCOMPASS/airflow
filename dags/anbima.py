@@ -14,6 +14,7 @@ from utils.is_not_holiday import _is_not_holiday
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
+
 with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     is_not_holiday = PythonOperator(
         task_id="is_not_holiday", python_callable=_is_not_holiday, provide_context=True
