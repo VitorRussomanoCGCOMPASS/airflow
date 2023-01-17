@@ -8,10 +8,11 @@ from sqlalchemy.orm import sessionmaker
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
-# https://github.com/apache/airflow/discussions/26211
 
+def test_import():
+    import include
 
-
+    return None
 
 def list_currencies():
     from flask_api.models.indexes import Indexes
@@ -25,5 +26,7 @@ def list_currencies():
 
 with DAG("tables", schedule="@daily", default_args=default_args, catchup=False):
 
+    teste = PythonOperator(task_id= 'test_import',python_callable=test_import)
     list = PythonOperator(task_id="list_currencies", python_callable=list_currencies)
 
+    teste >> list

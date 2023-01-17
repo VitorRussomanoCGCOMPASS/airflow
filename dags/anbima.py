@@ -124,7 +124,6 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     yield_ima_b.set_upstream([store_ima, store_vna])
     yield_ima_b.set_downstream(britech)
 
-# TODO : PYTHONPATH TO INCLUDE AND TO MODELS!
-
+# TODO : PYTHONPATH TO INCLUDE AND TO MODELS!\
 # TODO : CALCULATE YIELD IMA B (IMA-B YIELD FROM ; VNA NTN-B)
 # TODO : WRITE POST YIELD IMA B
