@@ -4,45 +4,44 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
-from sqlalchemy.orm import sessionmaker
 
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
 
-def test_import():
-    pass
-
-    # import os
-    # import sys
-    # sys.path.insert(0,os.path.abspath(os.path.dirname('C:/Users/Vitor Russomano/airflow/mymoduleabc')))
+from sqlalchemy import inspect
 
 
 def add_currencies():
-    from flask_api.models.indexes import Indexes
 
-    hook = PostgresHook(postgres_conn_id="postgres_new")
+    from flask_api.models import ima, vna, debentures, cricra
+    from flask_api.db import metadata
+
+    hook = PostgresHook(postgres_conn_id="postgres_userdata")
     engine = hook.get_sqlalchemy_engine()
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    indices = [Indexes(index="abc"), Indexes(index="bcd")]
-    session.add_all(indices)
-    session.commit()
+    metadata.drop_all(bind=engine)
 
+    inspector = inspect(engine)
+    for table_name in inspector.get_table_names():
+        print(table_name)
 
 def list_currencies():
-    from flask_api.models.indexes import Indexes
+    from flask_api.models import ima, vna, debentures, cricra
+    from flask_api.db import metadata
 
-    hook = PostgresHook(postgres_conn_id="postgres_new")
+    hook = PostgresHook(postgres_conn_id="postgres_userdata")
     engine = hook.get_sqlalchemy_engine()
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    print(session.query(Indexes).all())
+    metadata.create_all(bind=engine)
+    
+    inspector = inspect(engine)
+    for table_name in inspector.get_table_names():
+        print(table_name)
+
 
 
 with DAG("tables", schedule="@daily", default_args=default_args, catchup=False):
 
     
-    # teste = PythonOperator(task_id="add_currencies", python_callable=add_currencies)
-    list = PythonOperator(task_id="list_currencies", python_callable=list_currencies)
+    drop = PythonOperator(task_id="drop_all", python_callable=add_currencies)
+    create = PythonOperator(task_id="create_all", python_callable=list_currencies)
 
-    # teste >> list
+    drop >> create

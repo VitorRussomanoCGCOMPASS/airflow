@@ -2,8 +2,22 @@ from airflow.utils.decorators import apply_defaults
 from sqlalchemy.orm import sessionmaker, Session
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.operators.python import PythonOperator
+from typing import Union
+from sqlalchemy import create_engine
 
 def get_session(conn_id: str) -> Session:
+    """
+
+    Parameters
+    ----------
+    conn_id : str
+        _description_
+
+    Returns
+    ------- 
+    Session
+
+    """    
     hook = PostgresHook(postgres_conn_id=conn_id)
     engine = hook.get_sqlalchemy_engine()
     return sessionmaker(bind=engine)()
@@ -20,7 +34,7 @@ class SQLAlchemyOperator(PythonOperator):
     """
 
     @apply_defaults
-    def __init__(self, conn_id: str, *args, **kwargs):
+    def __init__(self, conn_id: str , *args, **kwargs):
         self.conn_id = conn_id
         super().__init__(*args, **kwargs)
 

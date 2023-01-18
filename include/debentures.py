@@ -1,20 +1,32 @@
+from flask_api.models.debentures import Debentures
+from marshmallow import EXCLUDE, fields, pre_load
 
-# TODO: PIP UNINSTALL PYODBC
-
-
-from flask_api.dbconnection import EngineManager
-manager = EngineManager()
-engine = manager.get_engine('localdev')
-
-from sqlalchemy.orm import sessionmaker
-Session = sessionmaker(bind=engine)
-session = Session()
+from include.base_schema import CustomSchema
 
 
+# COMPLETE: LOAD INSTANCE TRUE
 
+from marshmallow import post_load
 
-import json 
-with open('C:/Users/Vitor Russomano/airflow/data/anbima/vna_2023-01-12.json','r') as _file:       
-     data = json.load(_file)
- 
-VNASchema().load(data,many=True)
+class DebenturesSchema(CustomSchema):
+    class Meta:
+        model = Debentures
+        unknown = EXCLUDE
+        dateformat = "%Y-%m-%d"
+        load_instance=True
+
+    data_finalizado = fields.Date("%Y-%m-%dT%H:%M:%S.%f")
+
+    @pre_load
+    def pre_loader(self, data, many, **kwargs):
+        """
+        Pre processes the data. Exchanges '--' for None in percent_reune.
+        """
+        if data["percent_reune"] == "--":
+            data["percent_reune"] = None
+    
+        if isinstance(data['percent_reune'] , str):
+            data["percent_reune"] = float(data["percent_reune"].replace("%", "e-2"))
+        return data
+
+    
