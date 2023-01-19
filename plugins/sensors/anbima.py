@@ -8,11 +8,12 @@ from airflow.utils.operator_helpers import determine_kwargs
 
 
 class AnbimaSensor(BaseSensorOperator):
-    template_fields = ("endpoint", "headers")
+    template_fields = ("endpoint", "headers","request_params")
 
     def __init__(
         self,
         endpoint: Union[None, str] = None,
+        request_params: Union[dict, None] = None,
         data: Union[str, dict, None] = None,
         headers: Union[dict, None] = None,
         extra_options: Union[dict, None] = None,
@@ -25,6 +26,7 @@ class AnbimaSensor(BaseSensorOperator):
         self.extra_options = extra_options or {}
         self.response_check = response_check
         self.data = data
+        self.request_params = request_params or {}
 
     def poke(self, context):
         hook = AnbimaHook()
@@ -35,6 +37,7 @@ class AnbimaSensor(BaseSensorOperator):
                 endpoint=self.endpoint,
                 data=self.data,
                 headers=self.headers,
+                request_params=self.request_params,
                 extra_options=self.extra_options,
             )
             if self.response_check:

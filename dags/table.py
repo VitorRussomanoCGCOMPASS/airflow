@@ -38,7 +38,7 @@ def list_currencies():
 
 
 
-with DAG("tables", schedule="@daily", default_args=default_args, catchup=False):
+with DAG("tables", schedule=None, default_args=default_args, catchup=False):
 
     
     drop = PythonOperator(task_id="drop_all", python_callable=add_currencies)

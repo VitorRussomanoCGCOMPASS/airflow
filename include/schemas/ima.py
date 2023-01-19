@@ -1,4 +1,4 @@
-from include.base_schema import CustomSchema
+from include.schemas.base_schema import CustomSchema
 from flask_api.models.ima import ComponentsIMA, IMA
 from marshmallow import EXCLUDE, pre_load
 from marshmallow.fields import Float

@@ -2,11 +2,11 @@ import json
 from typing import Any, Union
 
 import requests
-from connections.anbima import ANBIMA_CONNECTION
 
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 
+# COMPLETE :  THE ANBIMA HOOK IS NOT SENDING THE PROPER HEADER.
 
 class AnbimaHook(BaseHook):
     def __init__(self, conn_id="anbima_api"):  # , conn_id = 'anbima_api'
@@ -59,6 +59,8 @@ class AnbimaHook(BaseHook):
         data: Union[str, dict, None] = None,
         headers: Union[dict, None] = None,
         extra_options: Union[dict, None] = None,
+        request_params: Union[dict, None] = None,
+
     ) -> requests.Response:
         """_summary_
 
@@ -106,7 +108,7 @@ class AnbimaHook(BaseHook):
 
         url = self.url_from_endpoint(endpoint, base_url)
 
-        req = requests.Request(self.method, url, params=data, headers=headers)
+        req = requests.Request(self.method, url, data=data, headers=headers, params=request_params)
 
         prepped_request = session.prepare_request(req)
 

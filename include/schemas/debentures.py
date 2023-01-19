@@ -1,7 +1,7 @@
 from flask_api.models.debentures import Debentures
 from marshmallow import EXCLUDE, fields, pre_load
 
-from include.base_schema import CustomSchema
+from include.schemas.base_schema import CustomSchema
 
 
 # COMPLETE: LOAD INSTANCE TRUE

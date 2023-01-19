@@ -1,7 +1,7 @@
 from flask_api.models.vna import VNA
 from marshmallow import EXCLUDE
 
-from include.base_schema import CustomSchema
+from include.schemas.base_schema import CustomSchema
 
 from marshmallow import pre_load
 from marshmallow.utils import pluck

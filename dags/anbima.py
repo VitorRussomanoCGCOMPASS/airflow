@@ -1,29 +1,27 @@
 import json
 from typing import Type
 
-
-# TODO : WE MUST USE USERDATA NOT POSTGRES.
-
 from marshmallow_sqlalchemy import SQLAlchemySchema
 from operators.alchemy import SQLAlchemyOperator
 from operators.anbima import AnbimaOperator
 from pendulum import datetime
 from sensors.anbima import AnbimaSensor
 from sqlalchemy.orm import Session
-from utils.is_not_holiday import _is_not_holiday
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
-from include.cricra import CriCraSchema
-from include.ima import IMASchema
-from include.vna import VNASchema
-from include.debentures import DebenturesSchema
-from include.cricra import CriCraSchema
+from include.schemas.cricra import CriCraSchema
+from include.schemas.debentures import DebenturesSchema
+from include.schemas.ima import IMASchema
+from include.schemas.vna import VNASchema
 
-def sqlalchemy_task(
+# COMPLETE : WE MUST USE USERDATA NOT POSTGRES.
+
+
+def upload_task(
     data_path: str, session: Session, mshm_schema: Type[SQLAlchemySchema], many: bool
 ) -> None:
 
@@ -34,18 +32,57 @@ def sqlalchemy_task(
     session.add_all(objs)
 
 
+def testing(date):
+    print(date)
+
+
+def generate_yield_ima_b(session: Session, date: str, past_date: str):
+    from flask_api.models.ima import IMA
+    from flask_api.models.vna import VNA
+
+    ima = (
+        session.query(IMA).filter_by(data_referencia=date, indice="IMA-B").one_or_none()
+    )
+    past_ima = (
+        session.query(IMA)
+        .filter_by(data_referencia=past_date, indice="IMA-B")
+        .one_or_none()
+    )
+
+    vna = (
+        session.query(VNA)
+        .filter_by(data_referencia=date, codigo_selic="760100")
+        .one_or_none()
+    )
+    pass
+
+    # vna.vna
+    # vna.vna d-1
+
+    # (vna.vna / vna.vna d-1 )
+
+    # ima.yield
+    # (1+ima.yield / 100)^(1/252)
+
+    # result ima * result_vna
+
+    # total result * total_result d-1
+
+
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
 # TODO : TEST THE ANBIMA SENSORS
+# TODO: CHECK IF ITS D OR D-1
 
-with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
-    is_not_holiday = PythonOperator(
-        task_id="is_not_holiday", python_callable=_is_not_holiday, provide_context=True
+
+with DAG("anbima", schedule=None, default_args=default_args, catchup=False):
+    is_not_holiday = ShortCircuitOperator(
+        task_id="is_business_day", python_callable=lambda: True, provide_context=True
     )
 
     wait_vna = AnbimaSensor(
         task_id="wait_vna",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
         mode="reschedule",
         timeout=60 * 60,
@@ -54,14 +91,14 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     fetch_vna = AnbimaOperator(
         task_id="fetch_vna",
         endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         output_path="/opt/airflow/data/anbima/vna_{{macros.ds_add(ds,-1)}}.json",
     )
 
     store_vna = SQLAlchemyOperator(
         task_id="store_vna",
         conn_id="postgres_userdata",
-        python_callable=sqlalchemy_task,
+        python_callable=upload_task,
         provide_context=True,
         op_kwargs={
             "data_path": "/opt/airflow/data/anbima/vna_{{macros.ds_add(ds,-1)}}.json",
@@ -72,7 +109,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
 
     wait_debentures = AnbimaSensor(
         task_id="wait_debentures",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
         mode="reschedule",
         timeout=60 * 60,
@@ -81,14 +118,14 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     fetch_debentures = AnbimaOperator(
         task_id="fetch_debentures",
         endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         output_path="/opt/airflow/data/anbima/debentures_{{macros.ds_add(ds,-1)}}.json",
     )
 
     store_debentures = SQLAlchemyOperator(
         task_id="store_debentures",
         conn_id="postgres_userdata",
-        python_callable=sqlalchemy_task,
+        python_callable=upload_task,
         provide_context=True,
         op_kwargs={
             "data_path": "/opt/airflow/data/anbima/debentures_{{macros.ds_add(ds,-1)}}.json",
@@ -98,7 +135,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     )
     wait_cricra = AnbimaSensor(
         task_id="wait_cricra",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
         mode="reschedule",
         timeout=60 * 60,
@@ -107,14 +144,14 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     fetch_cricra = AnbimaOperator(
         task_id="fetch_cricra",
         endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         output_path="/opt/airflow/data/anbima/cricra_{{macros.ds_add(ds,-1)}}.json",
     )
 
     store_cricra = SQLAlchemyOperator(
         task_id="store_cricra",
         conn_id="postgres_userdata",
-        python_callable=sqlalchemy_task,
+        python_callable=upload_task,
         provide_context=True,
         op_kwargs={
             "data_path": "/opt/airflow/data/anbima/cricra_{{macros.ds_add(ds,-1)}}.json",
@@ -125,7 +162,7 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
 
     wait_ima = AnbimaSensor(
         task_id="wait_ima",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
         mode="reschedule",
         timeout=60 * 60,
@@ -134,14 +171,14 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
     fetch_ima = AnbimaOperator(
         task_id="fetch_ima",
         endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
-        headers={"data": "{{ macros.ds_add(ds, -1) }}"},
+        request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
         output_path="/opt/airflow/data/anbima/ima_{{macros.ds_add(ds,-1)}}.json",
     )
 
     store_ima = SQLAlchemyOperator(
         task_id="store_ima",
         conn_id="postgres_userdata",
-        python_callable=sqlalchemy_task,
+        python_callable=upload_task,
         provide_context=True,
         op_kwargs={
             "data_path": "/opt/airflow/data/anbima/ima_{{macros.ds_add(ds,-1)}}.json",
@@ -150,9 +187,14 @@ with DAG("anbima", schedule="@daily", default_args=default_args, catchup=False):
         },
     )
     with TaskGroup(group_id="yield-ima-b") as yield_ima_b:
+
+        calculate = PythonOperator(
+            task_id="calculate",
+            python_callable=testing,
+            op_kwargs={"date": "{{macros.anbima_offset.forward(ds,-1)}}"},
+        )
         
-        calculate = EmptyOperator(task_id="calculate")
-        post = EmptyOperator(task_id="post")
+        post = EmptyOperator(task_id="post")  # pegar  and post to britech
 
     with TaskGroup(group_id="britech-indice-data") as britech:
         collect_id = EmptyOperator(task_id="collect_ids")

@@ -2,7 +2,7 @@ from flask_api.models.cricra import CriCra
 from marshmallow import EXCLUDE, fields, pre_load
 
 
-from include.base_schema import CustomSchema
+from include.schemas.base_schema import CustomSchema
 
 
 class CriCraSchema(CustomSchema):

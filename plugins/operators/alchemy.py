@@ -47,5 +47,6 @@ class SQLAlchemyOperator(PythonOperator):
         except Exception:
             session.rollback()
             raise
+        
         session.commit()
         return result

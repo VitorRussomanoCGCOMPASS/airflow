@@ -2,15 +2,12 @@ import json
 
 from operators.britech import BritechOperator
 from pendulum import datetime
-from utils.is_not_holiday import _is_not_holiday
+from sensors.britech import BritechFundsSensor, BritechIndicesSensor
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import PythonOperator
-from sensors.britech import BritechIndicesSensor
-from sensors.britech import BritechFundsSensor
-
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
 
 default_args = {
     "owner": "airflow",
@@ -80,14 +77,14 @@ def render_template(
 
 with DAG(
     "email_cotas_pl",
-    schedule="@daily",
+    schedule=None,
     default_args=default_args,
     catchup=False,
     max_active_runs=1,
 ):
 
-    is_not_holiday = PythonOperator(
-        task_id="is_not_holiday", python_callable=_is_not_holiday, provide_context=True
+    is_not_holiday = ShortCircuitOperator(
+        task_id="is_business_day", python_callable=lambda: True, provide_context=True
     )
 
     indices_sensor = BritechIndicesSensor(
@@ -106,13 +103,12 @@ with DAG(
             "data": "{{ds}}",
         },
     )
-    funds_sensor_2 = EmptyOperator(task_id='funds_sensor_2')
+    funds_sensor_2 = EmptyOperator(task_id="funds_sensor_2")
 
-    fetch_funds_return_2= EmptyOperator(task_id='fetch_funds_return_2')
-    append_fund_info_2= EmptyOperator(task_id='append_fund_info_2')
-    render_template_2= EmptyOperator(task_id='render_template_2')
-    send_email_2= EmptyOperator(task_id='send_email_2')
-
+    fetch_funds_return_2 = EmptyOperator(task_id="fetch_funds_return_2")
+    append_fund_info_2 = EmptyOperator(task_id="append_fund_info_2")
+    render_template_2 = EmptyOperator(task_id="render_template_2")
+    send_email_2 = EmptyOperator(task_id="send_email_2")
 
     fetch_indices_return = BritechOperator(
         task_id="fetch_indices_return",
@@ -164,8 +160,15 @@ with DAG(
     )
 
     fetch_funds_return.set_downstream(append_fund_info)
-    
-    chain(funds_sensor,funds_sensor_2,fetch_funds_return_2,append_fund_info_2,render_template_2,send_email_2)
+
+    chain(
+        funds_sensor,
+        funds_sensor_2,
+        fetch_funds_return_2,
+        append_fund_info_2,
+        render_template_2,
+        send_email_2,
+    )
     chain([append_fund_info, fetch_indices_return], render_to_template, send_email)
 
     # COMPLETE : GET REQUESTS FUND RETURNS
@@ -173,4 +176,3 @@ with DAG(
     # COMPLETE: READ THE DATA
     # COMPLETE: READ TEMPLATE AND CHANGE THE VALUES
     # TODO : SEND THE EMAIL USING SENDGRID (READING CONTACTS FROM DATABASE
-

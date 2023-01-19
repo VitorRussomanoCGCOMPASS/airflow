@@ -12,11 +12,12 @@ import os
 
 
 class AnbimaOperator(BaseOperator):
-    template_fields = ("endpoint", "data", "headers", "output_path")
+    template_fields = ("endpoint", "data", "headers", "output_path","request_params")
 
     def __init__(
         self,
         output_path: str,
+        request_params: Union[dict, None] = None,
         endpoint: Union[None, str] = None,
         data: Union[str, dict, None] = None,
         headers: Union[dict, None] = None,
@@ -33,7 +34,8 @@ class AnbimaOperator(BaseOperator):
         self.log_response = log_response
         self.data = data
         self.output_path = output_path
-
+        self.request_params = request_params or {}
+    
     def execute(self, context):
         hook = AnbimaHook()
         self.log.info("Calling HTTP method")
@@ -42,7 +44,9 @@ class AnbimaOperator(BaseOperator):
             endpoint=self.endpoint,
             data=self.data,
             headers=self.headers,
+            request_params=self.request_params,
             extra_options=self.extra_options,
+        
         )
 
         if self.log_response:

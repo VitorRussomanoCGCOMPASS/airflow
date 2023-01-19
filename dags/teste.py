@@ -6,7 +6,7 @@ from airflow.operators.empty import EmptyOperator
 default_args = {"owner": "airflow", "start_date": datetime(2023, 1, 1)}
 
 
-with DAG("testando_post", schedule="@daily", default_args=default_args, catchup=False):
+with DAG("testando_post", schedule=None, default_args=default_args, catchup=False):
 
     data = {
         "IdIndice": 3,
@@ -23,9 +23,7 @@ with DAG("testando_post", schedule="@daily", default_args=default_args, catchup=
         headers=header,
         json=data,
     )
-    teste2 = EmptyOperator(task_id="teste2")
 
-    teste >> teste2
 
 
 
