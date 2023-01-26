@@ -13,7 +13,7 @@ from sqlalchemy import inspect
 
 def add_currencies():
 
-    from flask_api.models import ima, vna, debentures, cricra
+    from flask_api.models import ima, vna, debentures, cricra, currency
     from flask_api.db import metadata
 
     hook = PostgresHook(postgres_conn_id="postgres_userdata")
@@ -25,7 +25,7 @@ def add_currencies():
         print(table_name)
 
 def list_currencies():
-    from flask_api.models import ima, vna, debentures, cricra
+    from flask_api.models import ima, vna, debentures, cricra, currency , indexes
     from flask_api.db import metadata
 
     hook = PostgresHook(postgres_conn_id="postgres_userdata")
@@ -41,7 +41,8 @@ def list_currencies():
 with DAG("tables", schedule=None, default_args=default_args, catchup=False):
 
     
-    drop = PythonOperator(task_id="drop_all", python_callable=add_currencies)
+    
+    # drop = PythonOperator(task_id="drop_all", python_callable=add_currencies)
     create = PythonOperator(task_id="create_all", python_callable=list_currencies)
 
-    drop >> create
+    create

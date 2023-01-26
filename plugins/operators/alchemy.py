@@ -44,9 +44,10 @@ class SQLAlchemyOperator(PythonOperator):
             result = self.python_callable(
                 *self.op_args, session=session, **self.op_kwargs
             )
-        except Exception:
+        except Exception as exc:
             session.rollback()
-            raise
+            raise exc
         
         session.commit()
         return result
+

@@ -1,9 +1,7 @@
-from typing import Union
+from typing import Any, Union
 
 import numpy
 
-from airflow.models.baseoperator import BaseOperator
-from airflow.utils.context import Context
 
 
 def _checkfile(fname):
@@ -37,16 +35,3 @@ def init_calendar(
             _holidays.append(cal_reg)
 
     return numpy.busdaycalendar(weekmask=weekmask, holidays=_holidays)
-
-
-class AnbimaBusinessDayOperator(BaseOperator):
-    template_fields = ("date",)
-
-    def __init__(self, date: str, fname="ANBIMA", *args, **kwargs):
-        super(AnbimaBusinessDayOperator, self).__init__(*args, **kwargs)
-        self.fname = fname
-        self.date = date
-
-    def execute(self, context: Context):
-        calendar = init_calendar(self.fname)
-        return numpy.is_busday([self.date], busdaycal=calendar)[0]

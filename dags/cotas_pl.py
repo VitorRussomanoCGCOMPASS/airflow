@@ -14,19 +14,16 @@ default_args = {
     "start_date": datetime(2023, 1, 1),
 }
 
-
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
     Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
     return value.split("T")[0]
-
 
 def percentformat(value) -> str:
 
     """Format float to str with percentage format"""
 
     return f"{value/100:.2%}".replace(".", ",")
-
 
 def currencyformat(value) -> str:
 
@@ -117,7 +114,7 @@ with DAG(
             "idIndices": "1 , 26 , 70 , 102 , 1011",
             "dataReferencia": "{{ macros.ds_format(ds, '%Y-%m-%d', '%Y-%m-%dT00:00:00') }}",
         },
-        output_path="/opt/airflow/data/britech/rentabilidade/indices_'{{macros.ds_add(ds,-1)}}'.json",
+        output_path="/opt/airflow/data/britech/rentabilidade/indices_{{macros.ds_add(ds,-1)}}.json",
     )
 
     fetch_funds_return = BritechOperator(
