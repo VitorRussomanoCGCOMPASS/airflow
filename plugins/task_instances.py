@@ -49,7 +49,6 @@ def get_previous_ti_success(
         session=session,
     )
 
-
 @provide_session
 def get_previous_ti_dagrun_by_state(
     task_instance: taskinstance.TaskInstance,
@@ -113,3 +112,4 @@ class TaskPlugin(AirflowPlugin):
         get_previous_ti_success,
         get_previous_ti_sucess_dagrun,
     ]
+
