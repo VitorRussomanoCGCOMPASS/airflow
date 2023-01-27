@@ -8,6 +8,7 @@ from include.utils.is_business_day import _is_business_day
 from airflow.sensors.base import PokeReturnValue
 from operators.alchemy import SQLAlchemyOperator
 
+from airflow.models.baseoperator import chain
 
 default_args = {
     "owner": "airflow",
@@ -16,6 +17,7 @@ default_args = {
 
 
 # TODO : DO WE ACTUALLY NEED TO MAKE ALL OF THIS? WHY NOT GET FROM BRITECH.
+
 
 def _filter_data(file_path: str):
 
@@ -38,7 +40,7 @@ def _filter_data(file_path: str):
 
     IndexValuesSchema(unkown=EXCLUDE).load(
         {
-            "value": float(cdi_val.replace(',','.')),
+            "value": float(cdi_val.replace(",", ".")),
             "date": att_date,
             "index": {"id": 1027, "currency": "USDMXN"},
         }
@@ -78,8 +80,6 @@ with DAG("cdi", schedule=None, default_args=default_args, catchup=False):
             if att_date := re.search(r"\d{2}/\d{2}/\d{4}", att_date.text):
                 att_date = att_date.group()
                 att_date = from_format(att_date, "DD/MM/YYYY")
-        
-        # TODO :CHECK THIS CONDITION
 
         if att_date == from_format(date, "YYYY-MM-DD"):
             condition_met = True
@@ -102,11 +102,11 @@ with DAG("cdi", schedule=None, default_args=default_args, catchup=False):
         },
     )
 
-    (
-        is_business_day
-        >> _extract_data(
+    chain(
+        is_business_day,
+        _extract_data(
             output_path="/opt/airflow/data/cdi_{{ds}}.json",
             date="{{macros.anbima_plugin.forward(ds,-1)}}",
-        )
-        >> filter_data
+        ),
+        filter_data,
     )

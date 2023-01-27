@@ -210,7 +210,7 @@ with DAG(
             python_callable=generate_yield_ima_b,
             op_kwargs={
                 "date": "{{ds}}",
-                "past_date": "{{macros.anbima_offset.forward(ds,-1)}}",
+                "past_date": "{{macros.anbima_plugin.forward(ds,-1)}}",
             },
         )
 

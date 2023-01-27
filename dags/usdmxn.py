@@ -6,6 +6,7 @@ from operators.alchemy import SQLAlchemyOperator
 from sqlalchemy.orm import Session
 from include.utils.is_business_day import _is_business_day
 from airflow.operators.python import ShortCircuitOperator
+from airflow.models.baseoperator import chain
 
 default_args = {
     "owner": "airflow",
@@ -16,7 +17,7 @@ default_args = {
 # COMPLETE : jUST IMPORT SCHEMAS FROM FLASK_API AND OVERRIDE THE RAISE
 
 
-def push_usdmxn(session: Session, file_path) -> None:
+def push_usdmxn(session: Session, file_path: str) -> None:
     from flask_api.schemas.currency import CurrencyValuesSchema
     from marshmallow import EXCLUDE
 
@@ -33,7 +34,6 @@ def push_usdmxn(session: Session, file_path) -> None:
         }
     )
 
-
 with DAG("usdmxn", schedule=None, default_args=default_args, catchup=False):
 
     is_business_day = ShortCircuitOperator(
@@ -42,7 +42,7 @@ with DAG("usdmxn", schedule=None, default_args=default_args, catchup=False):
         provide_context=True,
     )
 
-    @task.sensor(mode="poke", timeout=3600, poke_interval=1500)
+    @task.sensor(mode="reschedule", timeout=3600)
     def _extract_data(output_path: str, date) -> PokeReturnValue:
         import json
         from pendulum import parser
@@ -61,7 +61,6 @@ with DAG("usdmxn", schedule=None, default_args=default_args, catchup=False):
 
         data["fechaEn"] = parser.parse(data["fechaEn"], strict=False).to_date_string()  # type: ignore
 
-        # TODO :CHECK THIS CONDITION
 
         if data["fechaEn"] == date:
             condition_met = True
@@ -84,10 +83,10 @@ with DAG("usdmxn", schedule=None, default_args=default_args, catchup=False):
         },
     )
 
-    (
-        is_business_day
-        >> _extract_data(
+    chain(
+        is_business_day,
+        _extract_data(
             output_path="/opt/airflow/data/banxico_{{ds}}.json", date="{{ds}}"
-        )
-        >> _push_usdmxn
+        ),
+        _push_usdmxn,
     )

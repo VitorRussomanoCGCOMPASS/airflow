@@ -2,7 +2,6 @@ from operators.britech import BritechOperator
 from pendulum import datetime
 
 from airflow import DAG
-from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
 from include.utils.is_business_day import _is_business_day
 from airflow.operators.python import ShortCircuitOperator
@@ -12,35 +11,40 @@ from operators.alchemy import SQLAlchemyOperator
 from sqlalchemy.orm import Session
 
 
+from airflow.operators.empty import EmptyOperator
+
+
 def _push_cotista_op(file_path: str, session: Session):
     import json
     from include.schemas.cotista_op import CotistaOpSchema
-    import logging 
-    
+    import logging
+
+    # TODO : IMPROVE PERFOMANCE.
+    #  https://medium.com/analytics-vidhya/easily-load-data-from-an-s3-bucket-into-postgres-using-the-aws-s3-extension-17610c660790
+
     with open(file_path, "r") as _file:
-        logging.info('Getting file.')
+        logging.info("Getting file.")
         data = json.load(_file)
 
-    cotista_op_objs = CotistaOpSchema(session=session).load(data,many=True)
+    cotista_op_objs = CotistaOpSchema(session=session).load(data, many=True)
     session.add_all(cotista_op_objs)
-    logging.info('Writing Cotista Operations to database')
-
+    logging.info("Writing Cotista Operations to database")
 
 
 def isfirst_workday(ds: str):
     """Determine first workday based on day of month and weekday (0 == Monday)"""
     from datetime import datetime
-    import logging 
-    
+    import logging
+
     theday = datetime.strptime(ds, "%Y-%m-%d")
     if theday.month in (6, 12):
         if (theday.day in (2, 3) and theday.weekday() == 0) or (
             theday.day == 1 and theday.weekday() < 5
         ):
-            logging.info('Calling Filter for Come cotas operation.')     
+            logging.info("Calling Filter for Come cotas operation.")
             return True
-    
-    logging.info('Skpping filter for Come cotas operation.')     
+
+    logging.info("Skpping filter for Come cotas operation.")
 
     return False
 
@@ -101,7 +105,7 @@ with DAG(
         provide_context=True,
     )
 
-    cc_filter = PythonOperator(task_id="filter", python_callable=filter)
+    filter_cotas_op = PythonOperator(task_id="filter_cotas_op", python_callable=filter)
 
     push_cotista_op = SQLAlchemyOperator(
         conn_id="postgres_userdata",
@@ -111,22 +115,37 @@ with DAG(
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    teste = PythonOperator(
-        task_id="teste",
-        python_callable=_check_for_retroactive_updates,
-        op_kwargs={
-            "teste": "{{macros.previous_task.get_previous_ti_sucess(task_instance=task_instance)}}"
+    call_for_updates = ShortCircuitOperator(
+        task_id="call_for_updates",
+        python_callable=lambda: True,
+    )
+
+    fetch_retroactive_updates = BritechOperator(
+        task_id="fetch_retroactive_updates",
+        output_path="/opt/airflow/data/britech/operacoes/update_{{ds}}.json",
+        endpoint="/Distribuicao/BuscaOperacaoCotistaDistribuidor",
+        request_params={
+            "dtInicio": "{{macros.previous_task.get_previous_ti_success(task_instance=task_instance).end_date | ds}}",
+            "dtFim": "{{macros.ds_format(ds,'%Y-%m-%d','%Y-%m-%dT:%H:%M:%S')}}",
+            "cnpjCarteira": {"cnpjCarteira"},
+            "idCotista": {"idCotista"},
+            "tpOpCotista": {"tpOpCotista"},
+            "cnpjAgente": {"cnpjAgente"},
+            "tpCotista": {"tpCotista"},
         },
     )
+
+    push_updates = EmptyOperator(task_id="push_updates")
+
     chain(
         is_business_day,
         fetch_cotista_op,
         check_for_come_cotas,
-        cc_filter,
+        filter_cotas_op,
         push_cotista_op,
-        teste,
     )
 
+    chain(is_business_day, call_for_updates, fetch_retroactive_updates, push_updates)
 
 # TODO :
 # Entre a ultima data de execucao e essa. Procura todos as operacoes tipo 4 ou 101 que tem data liquidacao / conversão dentro desse periodo.
