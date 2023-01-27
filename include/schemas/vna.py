@@ -6,11 +6,6 @@ from include.schemas.base_schema import CustomSchema
 from marshmallow import pre_load
 from marshmallow.utils import pluck
 
-
-
-
-
-
    
 class VNASchema(CustomSchema):
     class Meta:

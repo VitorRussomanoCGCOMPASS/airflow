@@ -84,7 +84,10 @@ with DAG("usdmxn", schedule=None, default_args=default_args, catchup=False):
         },
     )
 
-    _extract_data(
-        output_path="/opt/airflow/data/banxico_{{ds}}.json",
-        date="{{ds}}",
-    ).set_downstream(_push_usdmxn)
+    (
+        is_business_day
+        >> _extract_data(
+            output_path="/opt/airflow/data/banxico_{{ds}}.json", date="{{ds}}"
+        )
+        >> _push_usdmxn
+    )

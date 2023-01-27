@@ -3,6 +3,8 @@ import typing
 from marshmallow import types, RAISE, ValidationError
 import logging
 
+# FIXME: IS NOT WORKING FOR MANY=TRUE
+
 class CustomSchema(SQLAlchemyAutoSchema):
     def load(
         self,

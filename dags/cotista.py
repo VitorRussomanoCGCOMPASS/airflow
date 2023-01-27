@@ -1,37 +1,61 @@
-
 from operators.britech import BritechOperator
 from pendulum import datetime
 
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
-from airflow.providers.sendgrid.utils.emailer import send_email
 from include.utils.is_business_day import _is_business_day
 from airflow.operators.python import ShortCircuitOperator
 from airflow.utils.trigger_rule import TriggerRule
 from airflow.models.baseoperator import chain
+from operators.alchemy import SQLAlchemyOperator
+from sqlalchemy.orm import Session
 
+
+def _push_cotista_op(file_path: str, session: Session):
+    import json
+    from include.schemas.cotista_op import CotistaOpSchema
+    import logging 
+    
+    with open(file_path, "r") as _file:
+        logging.info('Getting file.')
+        data = json.load(_file)
+
+    cotista_op_objs = CotistaOpSchema(session=session).load(data,many=True)
+    session.add_all(cotista_op_objs)
+    logging.info('Writing Cotista Operations to database')
 
 
 
 def isfirst_workday(ds: str):
     """Determine first workday based on day of month and weekday (0 == Monday)"""
     from datetime import datetime
+    import logging 
     
     theday = datetime.strptime(ds, "%Y-%m-%d")
     if theday.month in (6, 12):
         if (theday.day in (2, 3) and theday.weekday() == 0) or (
             theday.day == 1 and theday.weekday() < 5
         ):
+            logging.info('Calling Filter for Come cotas operation.')     
             return True
+    
+    logging.info('Skpping filter for Come cotas operation.')     
 
-    return False 
+    return False
 
 
-def filter(ds : str):
-    pass
-    # TODO : FILTER
+def filter(file_path: str):
 
+    import pandas
+
+    data = pandas.read_json(file_path)
+
+    operations_to_keep = []
+
+
+def _check_for_retroactive_updates(teste):
+    print(teste)
 
 
 default_args = {
@@ -79,43 +103,34 @@ with DAG(
 
     cc_filter = PythonOperator(task_id="filter", python_callable=filter)
 
-    teste = EmptyOperator(task_id="teste", trigger_rule=TriggerRule.NONE_FAILED)
+    push_cotista_op = SQLAlchemyOperator(
+        conn_id="postgres_userdata",
+        task_id="push_cotista_op",
+        python_callable=_push_cotista_op,
+        op_kwargs={"file_path": "/opt/airflow/data/britech/operacoes/{{ds}}.json"},
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
 
-    chain(is_business_day, fetch_cotista_op, check_for_come_cotas, cc_filter, teste)
-
-
-
-
-
-""" 
-data = pandas.read_json("data/britech/operacoes/teste.json")
-df = (
-    data.groupby(["DataOperacao", "TipoOperacao", "ApelidoCarteira"])["ValorLiquido"]
-    .sum()
-    .reset_index()
-)
-df.TipoOperacao.replace({1: 1, 5: -1}, inplace=True)
-df[["TipoOperacao", "ValorLiquido"]].cumprod(axis=1)
- """
-
-
-
-
-import pandas
-data = pandas.read_json('data/britech/operacoes/2023-01-26.json')
-
-df = (
-    data.groupby(["DataOperacao", "TipoOperacao", "ApelidoCarteira"])["ValorLiquido"]
-    .sum()
-    .reset_index()
-)
-
-df.TipoOperacao.replace({1: 1, 5: -1}, inplace=True)
+    teste = PythonOperator(
+        task_id="teste",
+        python_callable=_check_for_retroactive_updates,
+        op_kwargs={
+            "teste": "{{macros.previous_task.get_previous_ti_sucess(task_instance=task_instance)}}"
+        },
+    )
+    chain(
+        is_business_day,
+        fetch_cotista_op,
+        check_for_come_cotas,
+        cc_filter,
+        push_cotista_op,
+        teste,
+    )
 
 
-
-# TODO : SE FOR 101 OR 4 TEMOS QUE PEGAR A ULTIMA COTA DISPONIVEL.
-
+# TODO :
+# Entre a ultima data de execucao e essa. Procura todos as operacoes tipo 4 ou 101 que tem data liquidacao / conversão dentro desse periodo.
+#
 
 
 """ 

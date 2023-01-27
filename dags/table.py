@@ -25,7 +25,7 @@ def add_currencies():
         print(table_name)
 
 def list_currencies():
-    from flask_api.models import ima, vna, debentures, cricra, currency , indexes
+    from flask_api.models import ima, vna, debentures, cricra, currency , indexes, cotista_op
     from flask_api.db import metadata
 
     hook = PostgresHook(postgres_conn_id="postgres_userdata")
