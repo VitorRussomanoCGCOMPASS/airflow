@@ -10,13 +10,13 @@ from airflow.utils.operator_helpers import determine_kwargs
 from airflow.models import BaseOperator
 import os
 
-
 class BritechOperator(BaseOperator):
-    template_fields = ("endpoint", "data", "headers", "output_path", "request_params")
+    template_fields = ("endpoint", "data", "headers", "output_path", "filename", "request_params")
 
     def __init__(
         self,
         output_path: Union[str, None] = None,
+        filename : Union[str,None] = None ,
         request_params: Union[dict, None] = None,
         endpoint: Union[None, str] = None,
         data: Union[str, dict, None] = None,
@@ -37,13 +37,14 @@ class BritechOperator(BaseOperator):
         self.response_check = response_check
         self.log_response = log_response
         self.data = data
-        self.output_path = output_path
         self.json = json
+        self.output_path = output_path
+        self.filename = filename
 
     def execute(self, context):
         hook = BritechHook(method=self.method)
         self.log.info("Calling HTTP method")
-
+        
         response = hook.run(
             endpoint=self.endpoint,
             data=self.data,
@@ -60,14 +61,15 @@ class BritechOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        if self.method == "GET" and self.output_path:
-            self.log.info(f"Writing to {self.output_path}")
-            output_dir = os.path.dirname(self.output_path)
+        path = os.path.join(self.output_path,self.filename)  # type: ignore
+        
+        if self.method == "GET" and path:
+            self.log.info(f"Writing to {path}")
+            output_dir = os.path.dirname(path)
             os.makedirs(output_dir, exist_ok=True)
 
-            with open(self.output_path, "w") as file_:
+            with open(path, "w") as file_:
                 json.dump(response.json(), fp=file_)
 
         return response.json()
-
 

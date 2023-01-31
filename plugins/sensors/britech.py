@@ -90,6 +90,9 @@ class BritechIndicesSensor(BaseSensorOperator):
         return True
 
 
+
+# FIXME : SHOULD IT BE A DYNAMIC TASK?
+
 class BritechFundsSensor(BaseSensorOperator):
     template_fields = ("endpoint", "headers", "request_params")
 
@@ -188,19 +191,19 @@ class BritechFundsSensor(BaseSensorOperator):
                     data = response.json()
                     status = data.get("Status")
                     error = None if data.get("Erro") not in [1, 3] else data.get("Erro")
-    
+
                     if error:
                         self.log.info(
                             "Fund with cnpj: %s has return error code : %s", cnpj, error
                         )
                         return False
-    
+
                     if status != "Aberto":
                         self.log.info(
                             "Fund with cnpj: %s has status : %s", cnpj, status
                         )
                         return False
-                
+
                 except AirflowException as exc:
                     if str(exc).startswith("404"):
                         return False
@@ -212,3 +215,53 @@ class BritechFundsSensor(BaseSensorOperator):
         raise Exception(
             "ids or cnpj must be specified in the request_params along with date."
         )
+
+
+class BritechEmptySensor(BaseSensorOperator):
+    template_fields = ("endpoint", "headers", "request_params")
+
+    def __init__(
+        self,
+        endpoint: Union[str, None] = None,
+        data: Union[str, dict, None] = None,
+        headers: Union[dict, None] = None,
+        extra_options: Union[dict, None] = None,
+        request_params: Union[dict, None] = None,
+        response_check: Union[Callable[..., bool], None] = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.endpoint = endpoint
+        self.request_params = request_params or {}
+        self.headers = headers or {}
+        self.extra_options = extra_options or {}
+        self.response_check = response_check
+        self.data = data
+
+    def poke(self, context):
+        hook = BritechHook()
+        self.log.info("Poking: %s", self.endpoint)
+
+        try:
+            response = hook.run(
+                endpoint=self.endpoint,
+                data=self.data,
+                headers=self.headers,
+                extra_options=self.extra_options,
+                request_params=self.request_params,
+            )
+            if self.response_check:
+                kwargs = determine_kwargs(self.response_check, [response], context)
+                return self.response_check(response, **kwargs)
+
+            data = response.json()
+            if not data:
+                return False
+
+        except AirflowException as exc:
+            if str(exc).startswith("404"):
+                return False
+
+            raise exc
+
+        return True
