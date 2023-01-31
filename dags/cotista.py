@@ -1,40 +1,85 @@
-from operators.britech import BritechOperator
-from pendulum import datetime
-
-from airflow import DAG
-from airflow.operators.python import PythonOperator
-from include.utils.is_business_day import _is_business_day
-from airflow.operators.python import ShortCircuitOperator
-from airflow.utils.trigger_rule import TriggerRule
-from airflow.models.baseoperator import chain
 from operators.alchemy import SQLAlchemyOperator
+from operators.britech import BritechOperator
+from operators.extended_sql import SQLQueryToLocalOperator
+from pendulum import datetime
 from sqlalchemy.orm import Session
 
-
+from airflow import DAG
+from airflow.decorators import task
+from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
+from airflow.utils.trigger_rule import TriggerRule
+from include.utils.is_business_day import _is_business_day
+from airflow import XComArg
 
 
-def _push_cotista_op(file_path: str, session: Session):
+def _push_cotista_op(file_path: str, session: Session) -> None:
+    """
+    Reads json data from file specified by file_path and insert but do not update to CotistaOp table
+
+    Parameters
+    ----------
+    file_path : str
+    session : Session
+    """
     import json
-    from include.schemas.cotista_op import CotistaOpSchema
     import logging
 
-    # TODO : IMPROVE PERFOMANCE.
-    #  https://medium.com/analytics-vidhya/easily-load-data-from-an-s3-bucket-into-postgres-using-the-aws-s3-extension-17610c660790
+    from flask_api.models.cotista_op import CotistaOp
+    from sqlalchemy.dialects.postgresql import insert as pgs_upsert
+
+    # COMPLETE: IMPROVE PERFOMANCE. (2.0 Current release.)
+    # from sqlalchemy import insert
+    # session.execute(insert(CotistaOp), data)
 
     with open(file_path, "r") as _file:
         logging.info("Getting file.")
         data = json.load(_file)
 
-    cotista_op_objs = CotistaOpSchema(session=session).load(data, many=True)
-    session.add_all(cotista_op_objs)
+    stmt = pgs_upsert(CotistaOp).values(data)
+    stmt = stmt.on_conflict_do_nothing(
+        index_elements=["IdOperacao"],
+    )
+
+    session.execute(stmt)
     logging.info("Writing Cotista Operations to database")
+
+
+def _push_update_op(file_path: str, session: Session) -> None:
+    """
+    Reads json data from file specified by file_path and send updates to CotistaOp table
+
+    Parameters
+    ----------
+    file_path : str
+    session : Session
+    """
+    # FIXME: THIS IS UPSERTING. MEANING THAT IT IS INTRODUCING TYPE 4 INTO THE DB. SHOULD BE FILTERED BASED ON DATE & TIPO OPERACAO.
+    import json
+    import logging
+
+    from flask_api.models.cotista_op import CotistaOp
+    from sqlalchemy.dialects.postgresql import insert as pgs_upsert
+
+    with open(file_path, "r") as _file:
+        logging.info("Getting file")
+        data = json.load(_file)
+
+    stmt = pgs_upsert(CotistaOp).values(data)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["IdOperacao"],
+        set_=dict(
+            ValorLiquido=stmt.excluded.ValorLiquido, ValorBruto=stmt.excluded.ValorBruto
+        ),
+    )
+    session.execute(stmt)
 
 
 def isfirst_workday(ds: str):
     """Determine first workday based on day of month and weekday (0 == Monday)"""
-    from datetime import datetime
     import logging
+    from datetime import datetime
 
     theday = datetime.strptime(ds, "%Y-%m-%d")
     if theday.month in (6, 12):
@@ -49,23 +94,29 @@ def isfirst_workday(ds: str):
     return False
 
 
-def filter(file_path: str):
+def _generate_update_fetch():
+    file_path = "/opt/airflow/data/britech/operacoes/update.json"
+    import json
+    from itertools import chain
 
-    import pandas
+    with open(file_path) as _file:
+        data = json.load(_file)
 
-    data = pandas.read_json(file_path)
-
-    operations_to_keep = []
+    return list(chain(*data))
 
 
-def _check_for_retroactive_updates(teste):
-    print(teste)
+# TODO : I believe it would be better if we implement 20 as come cotas.
+def _filter_come_cotas():
+    pass
+
+
+def _fetch_update_op(file: str):
+    print(file)
 
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1),
-    "catchup": False,
 }
 
 
@@ -75,6 +126,7 @@ with DAG(
     default_args=default_args,
     catchup=False,
     max_active_runs=1,
+    template_searchpath=["/opt/airflow/include/sql/"],
 ):
 
     is_business_day = ShortCircuitOperator(
@@ -88,8 +140,8 @@ with DAG(
         output_path="/opt/airflow/data/britech/operacoes/{{ds}}.json",
         endpoint="/Distribuicao/BuscaOperacaoCotistaDistribuidor",
         request_params={
-            "dtInicio": "{{macros.ds_format(ds,'%Y-%m-%d','%Y-%m-%dT:%H:%M:%S')}}",
-            "dtFim": "{{macros.ds_format(ds,'%Y-%m-%d','%Y-%m-%dT:%H:%M:%S')}}",
+            "dtInicio": "{{ds}}",
+            "dtFim": "{{ds}}",
             "cnpjCarteira": {"cnpjCarteira"},
             "idCotista": {"idCotista"},
             "tpOpCotista": {"tpOpCotista"},
@@ -105,7 +157,10 @@ with DAG(
         provide_context=True,
     )
 
-    filter_cotas_op = PythonOperator(task_id="filter_cotas_op", python_callable=filter)
+    filter_come_cotas = PythonOperator(
+        task_id="filter_come_cotas",
+        python_callable=_filter_come_cotas,
+    )
 
     push_cotista_op = SQLAlchemyOperator(
         conn_id="postgres_userdata",
@@ -115,65 +170,52 @@ with DAG(
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    call_for_updates = ShortCircuitOperator(
-        task_id="call_for_updates",
-        python_callable=lambda: True,
-    )
-
-    fetch_retroactive_updates = BritechOperator(
-        task_id="fetch_retroactive_updates",
-        output_path="/opt/airflow/data/britech/operacoes/update_{{ds}}.json",
-        endpoint="/Distribuicao/BuscaOperacaoCotistaDistribuidor",
-        request_params={
-            "dtInicio": "{{macros.previous_task.get_previous_ti_success(task_instance=task_instance).end_date | ds}}",
-            "dtFim": "{{macros.ds_format(ds,'%Y-%m-%d','%Y-%m-%dT:%H:%M:%S')}}",
-            "cnpjCarteira": {"cnpjCarteira"},
-            "idCotista": {"idCotista"},
-            "tpOpCotista": {"tpOpCotista"},
-            "cnpjAgente": {"cnpjAgente"},
-            "tpCotista": {"tpCotista"},
-        },
-    )
-
-    push_updates = EmptyOperator(task_id="push_updates")
-
     chain(
         is_business_day,
         fetch_cotista_op,
         check_for_come_cotas,
-        filter_cotas_op,
+        filter_come_cotas,
         push_cotista_op,
     )
 
-    chain(is_business_day, call_for_updates, fetch_retroactive_updates, push_updates)
+    search_for_updates = SQLQueryToLocalOperator(
+        task_id="search_for_updates",
+        file_path="/opt/airflow/data/britech/operacoes/update.json",
+        conn_id="postgres_userdata",
+        sql="update_op.sql",
+    )
 
-# TODO :
-# Entre a ultima data de execucao e essa. Procura todos as operacoes tipo 4 ou 101 que tem data liquidacao / conversão dentro desse periodo.
-#
+    generate_update_fetch = PythonOperator(
+        task_id="generate_update_fetch",
+        python_callable=_generate_update_fetch,
+    )
+
+    fetch_update_op = PythonOperator.partial(
+        task_id="fetch_update_op",
+        python_callable=_fetch_update_op,
+    ).expand(op_args=XComArg(generate_update_fetch))
+
+    push_update_op = SQLAlchemyOperator(
+        task_id="push_update_op",
+        python_callable=_push_update_op,
+        conn_id="postgres_userdata",
+        op_kwargs={"file_path": "/opt/airflow/data/britech/operacoes/update.json"},
+    )
+
+    join = EmptyOperator(
+        task_id="join", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS
+    )
+
+    chain(
+        is_business_day,
+        search_for_updates,
+        generate_update_fetch,
+        fetch_update_op,
+        push_update_op,
+    )
+
+    chain([push_cotista_op, push_update_op], join)
 
 
-""" 
-
-
-1 : Aplicacao
-101 : Aplicacao Cotas
-
-
-5 : Resgate Total
-2 : Resgate Bruto
-4 : Resgate Cotas
-
-
-
-Considera 1 , 2 e 5 se nao for do feeder
-
-4 Não deve ser considerado nos dias de come cota
-
-primeiro de dezembro e primeiro de junho (util)
-
-
-
-WORRY ABOUT FEEDERS!
-
-
- """
+# COMPLETE : SQL OPERATOR CANNOT FIND MOUNTED FILES.
+# FIXME : PROCESS OUTPUT DOES NOT RECEIVE CONTEXT.

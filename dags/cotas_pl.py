@@ -8,22 +8,26 @@ from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
+from include.utils.is_business_day import _is_business_day
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1),
 }
 
+
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
     Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
     return value.split("T")[0]
+
 
 def percentformat(value) -> str:
 
     """Format float to str with percentage format"""
 
     return f"{value/100:.2%}".replace(".", ",")
+
 
 def currencyformat(value) -> str:
 
@@ -80,8 +84,10 @@ with DAG(
     max_active_runs=1,
 ):
 
-    is_not_holiday = ShortCircuitOperator(
-        task_id="is_business_day", python_callable=lambda: True, provide_context=True
+    is_business_day = ShortCircuitOperator(
+        task_id="is_business_day",
+        python_callable=lambda: _is_business_day,
+        provide_context=True,
     )
 
     indices_sensor = BritechIndicesSensor(
@@ -151,7 +157,7 @@ with DAG(
     send_email = EmptyOperator(task_id="send_email")
 
     chain(
-        is_not_holiday,
+        is_business_day,
         [funds_sensor, indices_sensor],
         [fetch_funds_return, fetch_indices_return],
     )
