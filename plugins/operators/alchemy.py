@@ -1,11 +1,11 @@
 from airflow.utils.decorators import apply_defaults
-from sqlalchemy.orm import sessionmaker, Session
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.operators.python import PythonOperator
 from typing import Union
-from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
 
-def get_session(conn_id: str) -> Session:
+
+def get_session(conn_id: Union[str, None] = None, database: Union[str, None] = None):
     """
 
     Parameters
@@ -14,13 +14,13 @@ def get_session(conn_id: str) -> Session:
         _description_
 
     Returns
-    ------- 
+    -------
     Session
 
-    """    
-    hook = PostgresHook(postgres_conn_id=conn_id)
+    """
+    hook = PostgresHook(postgres_conn_id=conn_id, schema=database)
     engine = hook.get_sqlalchemy_engine()
-    return sessionmaker(bind=engine)()
+    return scoped_session(sessionmaker(engine))
 
 
 class SQLAlchemyOperator(PythonOperator):
@@ -34,12 +34,22 @@ class SQLAlchemyOperator(PythonOperator):
     """
 
     @apply_defaults
-    def __init__(self, conn_id: str , *args, **kwargs):
+    def __init__(
+        self,
+        conn_id: Union[str, None] = None,
+        database: Union[str, None] = None,
+        *args,
+        **kwargs
+    ) -> None:
+
         self.conn_id = conn_id
+        self.database = database
         super().__init__(*args, **kwargs)
 
     def execute_callable(self):
-        session = get_session(self.conn_id)
+
+        session = get_session(self.conn_id,self.database)
+
         try:
             result = self.python_callable(
                 *self.op_args, session=session, **self.op_kwargs
@@ -47,7 +57,6 @@ class SQLAlchemyOperator(PythonOperator):
         except Exception as exc:
             session.rollback()
             raise exc
-        
+
         session.commit()
         return result
-
