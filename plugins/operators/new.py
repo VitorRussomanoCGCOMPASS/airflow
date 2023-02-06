@@ -8,7 +8,7 @@ def _checkfile(fname):
     # try:
     #    __location__ = Path(__file__).with_name(fname)
     # except NameError:
-    __location__ = "data/calendar/" + fname
+    __location__ = "include/calendar/" + fname
 
     try:
         _file = {"iter": open(__location__)}

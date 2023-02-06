@@ -6,8 +6,6 @@ from include.schemas.base_schema import CustomSchema
 
 # COMPLETE: LOAD INSTANCE TRUE
 
-from marshmallow import post_load
-
 class DebenturesSchema(CustomSchema):
     class Meta:
         model = Debentures

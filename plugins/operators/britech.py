@@ -10,6 +10,8 @@ from airflow.utils.operator_helpers import determine_kwargs
 from airflow.models import BaseOperator
 import os
 
+# FIXME : FILENAME AND PATH jOIN!
+
 class BritechOperator(BaseOperator):
     template_fields = ("endpoint", "data", "headers", "output_path", "filename", "request_params")
 

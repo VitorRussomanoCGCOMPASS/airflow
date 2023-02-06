@@ -17,6 +17,7 @@ from airflow.timetables.base import Timetable
 
 UTC = timezone("UTC")
 
+# TODO : IS BUSINESS DAY?
 
 def forward(date: str, days: int, fname="ANBIMA") -> str:
     """
