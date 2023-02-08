@@ -105,22 +105,6 @@ def get_previous_ti_sucess_dagrun(
     )
 
 
-from airflow.utils.session import provide_session
-from airflow.models import XCom
-
-
-@provide_session
-def _cleanup_xcom(context, session=None) -> None:
-    import logging
-
-    dag_id = context["ti"]["dag_id"]
-    if not session:
-        session = context["session"]
-
-    session.query(XCom).filter(XCom.dag_id == dag_id).delete()
-    logging.info("Cleaned up XCOM")
-
-
 class TaskPlugin(AirflowPlugin):
     name = "task_plugin"
     macros = [
@@ -128,5 +112,5 @@ class TaskPlugin(AirflowPlugin):
         get_previous_ti_dagrun_by_state,
         get_previous_ti_success,
         get_previous_ti_sucess_dagrun,
-        _cleanup_xcom,
     ]
+    
