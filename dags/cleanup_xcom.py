@@ -12,13 +12,24 @@ default_args = {
 }
 
 
+doc_md_DAG = """ 
+# Cleanup XCOM
+
+This process is responsible for cleaning all data older than 7 days of the XCOM table.
+
+* sql_branch_xcom : Checks if there is any data older than 7 days. If there is, calls for cleanup_xcom. Else, just skips all following tasks.
+* cleanup_xcom : Cleans up all data older than 7 days from the XCOM table.
+"""
+
+
 with DAG(
     "cleanup_xcom",
-    schedule=None,
+    schedule="@daily",
     default_args=default_args,
     catchup=False,
     template_searchpath=["/opt/airflow/include/sql/"],
     max_active_runs=1,
+    doc_md=doc_md_DAG,
 ):
     sql_branch_xcom = BranchSQLOperator(
         task_id="sql_branch_xcom",
