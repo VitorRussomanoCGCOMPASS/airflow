@@ -4,7 +4,6 @@ from airflow.plugins_manager import AirflowPlugin
 @lru_cache(maxsize=2)
 def convert_ts(ts: str, timezone="America/Sao_Paulo") -> str:
     import pendulum
-
     try:
         pendulum_datetime = pendulum.from_format(ts, "YYYY-MM-DDTHH:mm:ss.SSSSSSZ")
     except ValueError:

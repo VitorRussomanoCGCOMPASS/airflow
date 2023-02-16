@@ -3,7 +3,6 @@ import datetime
 from dateutil import parser
 import logging
 
-
 def _is_business_day(ds) -> bool:
     """
     Check if execution date (ds) is a holiday or not
