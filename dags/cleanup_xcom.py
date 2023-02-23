@@ -37,7 +37,7 @@ with DAG(
         follow_task_ids_if_false=[],
         follow_task_ids_if_true=["cleanup_xcom"],
     )
-
+    
     cleanup_xcom = XComOperator(task_id="cleanup_xcom")
 
     chain(sql_branch_xcom, cleanup_xcom)
