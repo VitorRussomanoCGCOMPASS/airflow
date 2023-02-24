@@ -1,4 +1,4 @@
-SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date from funds a 
+SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date , type from funds a 
  JOIN funds_values c 
  ON a.britech_id = c.funds_id 
  WHERE britech_id in ({{params.ids}})
@@ -8,7 +8,7 @@ AND britech_id in ({{params.ids}})
 )  
 , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
 FROM Worktable)
-SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') , apelido, 
-COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) AS percent_change
+SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
+COALESCE(("CotaFechamento" - inception_cota)/inception_cota )*100 AS "RentabilidadeInicio"
 FROM lagged) as tb
-WHERE percent_change !=0
+WHERE "RentabilidadeInicio" !=0

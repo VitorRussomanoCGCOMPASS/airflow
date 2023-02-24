@@ -3,7 +3,10 @@ from typing import Union, Callable
 from hooks.britech import BritechHook
 from airflow.utils.operator_helpers import determine_kwargs
 from airflow.exceptions import AirflowException
+from itertools import chain
 
+
+# FIXME: CHECK IF FAILS SILENTLY ON 404
 
 class BritechIndicesSensor(BaseSensorOperator):
     template_fields = ("endpoint", "headers", "request_params")
@@ -50,12 +53,16 @@ class BritechIndicesSensor(BaseSensorOperator):
         """
         hook = BritechHook()
         self.log.info("Poking: %s", self.endpoint)
-
+        
+        # TODO: IF ids in xcom format
         ids = self.request_params.get("idIndice")
 
+        if isinstance(ids, list):
+            ids = list(chain(*ids))[-1]
+        
         if ids is None:
             raise Exception(
-                "The indices must be specified by a string of ids separated by comma."
+                "Ids should not be None."
             )
 
         ids = "".join(ids.split())
@@ -64,6 +71,7 @@ class BritechIndicesSensor(BaseSensorOperator):
                 "The indices must be specified by a string of ids separated by comma."
             )
 
+        
         try:
             response = hook.run(
                 endpoint=self.endpoint,
@@ -83,15 +91,14 @@ class BritechIndicesSensor(BaseSensorOperator):
 
         except AirflowException as exc:
             if str(exc).startswith("404"):
-                return False
-
-            raise exc
+                raise exc
+                
 
         return True
 
 
-
 # FIXME : SHOULD IT BE A DYNAMIC TASK?
+
 
 class BritechFundsSensor(BaseSensorOperator):
     template_fields = ("endpoint", "headers", "request_params")
@@ -206,15 +213,9 @@ class BritechFundsSensor(BaseSensorOperator):
 
                 except AirflowException as exc:
                     if str(exc).startswith("404"):
-                        return False
-
-                    raise exc
+                        raise exc
 
             return True
-
-        raise Exception(
-            "ids or cnpj must be specified in the request_params along with date."
-        )
 
 
 class BritechEmptySensor(BaseSensorOperator):
@@ -260,8 +261,6 @@ class BritechEmptySensor(BaseSensorOperator):
 
         except AirflowException as exc:
             if str(exc).startswith("404"):
-                return False
-
-            raise exc
+                raise exc 
 
         return True

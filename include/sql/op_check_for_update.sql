@@ -5,7 +5,7 @@ LEFT JOIN funds c
 ON a."IdCotista" = c.cotista_id
 WHERE c.cotista_id is NULL 
 AND "TipoOperacao" in (4, 5)
-AND "DataConversao" = '{{ds}}'
+AND "DataConversao" <= '{{ds}}'
 AND "ValorLiquido" = 0 
 		)
 		THEN 1

@@ -2,12 +2,11 @@ from operators.britech import BritechOperator
 from pendulum import datetime
 
 
-from airflow import DAG, XComArg
+from airflow import DAG
 from airflow.decorators import task
 from airflow.models.baseoperator import chain
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.operators.empty import EmptyOperator
-from plugins.task_instances import _cleanup_xcom
 from operators.alchemy import SQLAlchemyOperatorLocal
 from airflow.providers.common.sql.operators.sql import BranchSQLOperator
 from airflow.utils.task_group import TaskGroup
@@ -26,8 +25,6 @@ default_args = {
 # COMPLETE : IDS IN REQUEST PARAMS
 # COMPLETE : FILENAME WITH DS AND ID.
 
-funds = "10 , 49 , 3, 32 , 17 , 30, 42"
-
 
 def _push_cotista_op(file_path: str, session, filename, **kwargs) -> None:
     """
@@ -44,7 +41,7 @@ def _push_cotista_op(file_path: str, session, filename, **kwargs) -> None:
 
     from flask_api.models.funds import FundsValues
     from include.schemas.funds_values import FundsValuesSchemas
-
+    
     from sqlalchemy.dialects.postgresql import insert as pgs_upsert
 
     path = os.path.join(file_path, filename)
@@ -93,13 +90,12 @@ with DAG(
                 context,
             )
 
-            # FIXME: EFFICIENCY PLS.
             return list(
                 map(
                     lambda id: {
                         "request_params": {
                             "idCarteira": id[-1],
-                            "dataInicio": ds,
+                            "dataInicio": '2020-01-01',
                             "dataFim": ds,
                         },
                         "filename": "fund_id" + str(id[-1]) + "_" + ds + ".json",
@@ -135,9 +131,7 @@ with DAG(
             opening_new_day,
         )
 
-    cleanup_xcom = EmptyOperator(
-        task_id="cleanup_xcom", on_success_callback=_cleanup_xcom
-    )
+
 
     sql_branching_given_funds = BranchSQLOperator(
         task_id="sql_branching_given_funds",
@@ -150,7 +144,7 @@ with DAG(
 
     mass_fetch = EmptyOperator(task_id="mass_fetch")
 
-    chain(funds_processing, cleanup_xcom, sql_branching_given_funds, mass_fetch)
+    chain(funds_processing, sql_branching_given_funds, mass_fetch)
 
 
 # COMPLETE :  WRITE TO THE ACTUAL DATABASE.

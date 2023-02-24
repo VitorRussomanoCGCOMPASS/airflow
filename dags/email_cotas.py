@@ -1,6 +1,5 @@
 import logging
 
-from jinja2 import Undefined
 from operators.britech import BritechOperator
 from operators.extended_sql import SQLQueryToLocalOperator
 from pendulum import datetime
@@ -154,7 +153,6 @@ default_args = {
     "mode": "reschedule",
     "timeout": 60 * 30,
     "max_active_runs": 1,
-    "template_searchpath": ["/opt/airflow/include/sql/"],
     "catchup": False,
 }
 
@@ -163,6 +161,7 @@ with DAG(
     "email_cotas_pl_vfinal",
     schedule=None,
     default_args=default_args,
+    template_searchpath=["/opt/airflow/include/sql/"],
 ):
     is_business_day = ShortCircuitOperator(
         task_id="is_business_day",
@@ -382,6 +381,8 @@ with DAG(
                 "template_file": "internal_cotas_template.html",
                 "output_path": "/opt/airflow/data/all_cotas_pl_{{ds}}.html",
                 "funds_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
+                "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
+
             },
         )
 
@@ -399,7 +400,12 @@ with DAG(
     chain(funds_sql_sensor, all_funds)
 
 
-with DAG("email_prev_cotas_pl", schedule=None, default_args=default_args):
+with DAG(
+    "email_prev_cotas_pl",
+    schedule=None,
+    default_args=default_args,
+    template_searchpath=["/opt/airflow/include/sql/"],
+):
     is_business_day = ShortCircuitOperator(
         task_id="is_business_day",
         python_callable=_is_business_day,
@@ -499,6 +505,8 @@ with DAG("email_prev_cotas_pl", schedule=None, default_args=default_args):
             "template_file": "prev_internal_cotas_template.html",
             "output_path": "/opt/airflow/data/all_cotas_pl_{{ds}}.html",
             "funds_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
+            "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
+
         },
     )
 
