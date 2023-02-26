@@ -27,4 +27,5 @@ INSERT INTO devops (id ,name , dag, task_group,type) VALUES
 (26,	"PTAX REF 2 DIAS"	,"prev_email_cotas_pl"	,"prev_email_cotas_pl"	,"indexes"),
 (70,	"IBOVESPA"	,"prev_email_cotas_pl"	,"prev_email_cotas_pl"	,"indexes"),
 (102,	"IMA_B"	,"prev_email_cotas_pl"	,"prev_email_cotas_pl"	,"indexes"),
-(1011,	"IPCA + YIELD IMA-B"	,"prev_email_cotas_pl"	,"prev_email_cotas_pl"	,"indexes")
+(1011,	"IPCA + YIELD IMA-B"	,"prev_email_cotas_pl"	,"prev_email_cotas_pl"	,"indexes"),
+(43,	"COMPASS LCDA MASTER FI MULT IE CRED PRIV"	,"email_cotas_pl"	,"external-email-subset-funds"	,"funds")

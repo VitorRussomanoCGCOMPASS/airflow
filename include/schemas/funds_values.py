@@ -22,20 +22,15 @@ class FundsValuesSchemas(CustomSchema):
 
     funds_id = fields.Integer(data_key="IdCarteira")
     date = fields.Date(data_key="Data")
-    
 
-
-
-
-""" 
-
-CotaFechamento = fields.Float(
+    CotaFechamento = fields.Float(
         validate=validate.NoneOf(
             [
                 0,
             ],
         )
     )
+    
     PLFechamento = fields.Float(
         validate=validate.NoneOf(
             [
@@ -43,6 +38,3 @@ CotaFechamento = fields.Float(
             ],
         )
     )
-
-
- """

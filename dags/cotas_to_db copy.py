@@ -19,13 +19,6 @@ default_args = {
 }
 
 
-# COMPLETE :  WE NEED TO GET IN DATABASE AND GET ALL AVAILABLE FUNDS.
-# COMPLETE: EXPAND BRITECH OPERATOR.
-# COMPLETE : IS DS WORKING?
-# COMPLETE : IDS IN REQUEST PARAMS
-# COMPLETE : FILENAME WITH DS AND ID.
-
-
 def _push_cotista_op(file_path: str, session, filename, **kwargs) -> None:
     """
     Reads json data from file specified by file_path and insert but do not update to CotistaOp table
@@ -95,7 +88,7 @@ with DAG(
                     lambda id: {
                         "request_params": {
                             "idCarteira": id[-1],
-                            "dataInicio": '2020-01-01',
+                            "dataInicio": '2018-01-01',
                             "dataFim": ds,
                         },
                         "filename": "fund_id" + str(id[-1]) + "_" + ds + ".json",
@@ -131,24 +124,3 @@ with DAG(
             opening_new_day,
         )
 
-
-
-    sql_branching_given_funds = BranchSQLOperator(
-        task_id="sql_branching_given_funds",
-        database="userdata",
-        sql="check_funds.sql",
-        conn_id="postgres",
-        follow_task_ids_if_false=[],
-        follow_task_ids_if_true=["mass_fetch"],
-    )
-
-    mass_fetch = EmptyOperator(task_id="mass_fetch")
-
-    chain(funds_processing, sql_branching_given_funds, mass_fetch)
-
-
-# COMPLETE :  WRITE TO THE ACTUAL DATABASE.
-
-# TODO : MARSHMALLOW VALIDATES COTAS PL TO CHECK IF NOT 0. (IMPORTANT)
-# TODO : FIRST WE HAVE TO CHECK AGAINST THE DATABASE TO SEE IF IS ALREADY PROCESSED.
-# TODO : MAYBE WE ERASE OUR UPLOAD IF NOT EVERYTHING WORKS

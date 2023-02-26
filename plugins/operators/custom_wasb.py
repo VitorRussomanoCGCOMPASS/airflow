@@ -25,7 +25,8 @@ from airflow.utils.operator_helpers import determine_kwargs
 
 class BaseSQLToWasbOperator(BaseSQLOperator):
     """
-    Saves data from a specific SQL query into a file in Blob Storage.
+    Saves data from a specific SQL query into a file in Blob Storage. 
+    Converting based on the SQL server type to a Json friendly output.
 
 
     :param sql: the sql query to be executed. If you want to execute a file, place the absolute path of it,
@@ -37,12 +38,19 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
     :param split_statements: (optional) if split single SQL string into statements. By default, defers
         to the default value in the ``run`` method of the configured hook.
     :param return_last: (optional) return the result of only last statement (default: True).
-    :param container_name: Name of the container.
-    :param blob_name: Name of the blob.
+    :param container_name: Name of the container. (templated)
+    :param blob_name: Name of the blob. (templated)
     :param create_container: Attempt to create the target container prior to uploading the blob. This is
             useful if the target container may not exist yet. Defaults to False.
+    :param load_options: Optional keyword arguments that 'WasbHook.load_file()' takes.
+    :param wasb_overwrite_object: Whether the blob to be uploaded should overwrite the current data.
+    When wasb_overwrite_object is True, it will overwrite the existing data.
+    If set to False, the operation might fail with 
+    ResourceExistsError in case a blob object already exists. Defaults to True
+    :param wasb_conn_id: Reference to the wasb connection. Defaults to wasb_default
     :param stringify_dict: Whether to dump Dictionary type objects
         (such as JSON columns) as a string.
+    :param max_file_size_bytes: To set the approx. maximum size bytes on a file.
 
     """
 
@@ -166,6 +174,18 @@ class WasbToSqlOperator(BaseSQLOperator):
     """
     Loads Data from Blob into a SQL Database
     Need to provide a parser function that takes a filename as an input and returns an iterable of rows
+
+    :param blob_name:
+    :param container_name:
+    :param wasb_conn_id:
+    :param file_path:
+    :param table:
+    :param parser:
+    :param column_list:
+    :param commit_every:
+    :param schema:
+    :param conn_id:
+
     """
 
     template_fields: Sequence[str] = (
@@ -243,6 +263,30 @@ class WasbToSqlOperator(BaseSQLOperator):
 
 
 class BaseAPIToWasbOperator(BaseOperator):
+    """ 
+    Copy data from an API to Wasb in JSON format.
+
+    :param data: The data to pass (templated)
+    :param headers: The HTTP headers to be added to the GET request
+    :param response_check: A check against the 'requests' response object.
+        The callable takes the response object as the first positional argument
+        and optionally any number of keyword arguments available in the context dictionary.
+        It should return True for 'pass' and False otherwise.    :param extra_options:
+    :param log_response: Log the response (default: False)
+    :param request_params: params in the URL for a GET request (templated)
+    :param endpoint: The relative part of the full url.
+    :param wasb_conn_id: Reference to the wasb connection. Defaults to 'wasb_default'
+    :param container_name: Name of the container. (templated)
+    :param blob_name: Name of the blob. (templated)
+    :param create_container: Attempt to create the target container prior to uploading the blob. This is
+            useful if the target container may not exist yet. Defaults to False.
+    :param load_options: Optional keyword arguments that 'WasbHook.load_file()' takes.
+    :param wasb_overwrite_object: Whether the blob to be uploaded should overwrite the current data.
+    When wasb_overwrite_object is True, it will overwrite the existing data.
+    If set to False, the operation might fail with ResourceExistsError in case a blob object already exists. Defaults to True    
+    :param max_file_size_bytes: To set the approx. maximum size bytes on a file.
+    
+    """
     template_fields = (
         "data",
         "headers",
@@ -414,6 +458,7 @@ class MSSQLToWasbOperator(BaseSQLToWasbOperator):
 
 
 class PostgresToWasbOperator(BaseSQLToWasbOperator):
+
     def __init__(self, *, conn_id="postgres_default", **kwargs):
         super().__init__(**kwargs, conn_id=conn_id)
 
