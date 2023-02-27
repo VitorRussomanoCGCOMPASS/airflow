@@ -1,0 +1,1 @@
+SELECT britech_id FROM funds where status = '{{parameters.active}}'
