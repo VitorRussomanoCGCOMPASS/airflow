@@ -41,7 +41,8 @@ default_args = {
     "mode": "reschedule",
     "timeout": 60 * 60,
     "catchup": False,
-}
+}   
+
 
 with DAG(
     "anbima",

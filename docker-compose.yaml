@@ -59,6 +59,8 @@ x-airflow-common:
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW__CORE__XCOM_BACKEND: include.xcom_backend.CustomXComBackendJSON
+
   volumes:
     # host:container
     - ./dags:/opt/airflow/dags

@@ -6,7 +6,7 @@ from anbima_plug import is_busday
 from airflow.operators.python import ShortCircuitOperator
 from operators.custom_wasb import BritechToWasbOperator
 from operators.custom_wasb import AnbimaToWasbOperator
-
+from operators.anbima import AnbimaOperator
 
 default_args = {
     "owner": "airflow",
@@ -26,15 +26,14 @@ with DAG(
         python_callable=is_busday,
         provide_context=True,
     )
-    new = AnbimaToWasbOperator(
+    new = AnbimaOperator(
             task_id="new",
             request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
-            blob_name="teste_anbima",
-            container_name="rgbrprdblob"
-
-        )
-
+            do_xcom_push=True,
+            output_path='/opt/airflow/data/testeee.json'
+        )  
+    
     is_business_day >> new
 
 

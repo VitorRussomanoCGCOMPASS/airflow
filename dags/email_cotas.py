@@ -490,9 +490,9 @@ with DAG(
         task_id="merge",
         python_callable=_merge,
         op_kwargs={
-            "output_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
-            "funds_path": "/opt/airflow/data/britech/rentabilidade/all_funds_{{ds}}.json",
-            "comp_path": "/opt/airflow/data/britech/all_funds_comp.json",
+            "output_path": "/opt/airflow/data/prev_funds_final{{ds}}.json",
+            "funds_path": "/opt/airflow/data/britech/rentabilidade/prev_funds_{{ds}}.json",
+            "comp_path": "/opt/airflow/data/britech/prev_funds_comp.json",
             "filter": False,
         },
     )
@@ -503,8 +503,8 @@ with DAG(
         op_kwargs={
             "template_path": "/opt/airflow/include/templates/",
             "template_file": "prev_internal_cotas_template.html",
-            "output_path": "/opt/airflow/data/all_cotas_pl_{{ds}}.html",
-            "funds_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
+            "output_path": "/opt/airflow/data/prev_cotas_pl{{ds}}.html",
+            "funds_path": "/opt/airflow/data/prev_funds_final{{ds}}.json",
             "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
 
         },
