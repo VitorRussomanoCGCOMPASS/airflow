@@ -58,7 +58,7 @@ with DAG(
 
         wait_vna = AnbimaSensor(
             task_id="wait_vna",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts), -1)}}"},
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
         )
 
