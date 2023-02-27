@@ -16,16 +16,20 @@ from airflow.compat.functools import cached_property
 from airflow.exceptions import AirflowException
 from airflow.models import BaseOperator
 from airflow.providers.common.sql.hooks.sql import (
-    fetch_all_handler, return_single_query_results)
+    fetch_all_handler,
+    return_single_query_results,
+)
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
 
+import ast
+
 
 class BaseSQLToWasbOperator(BaseSQLOperator):
     """
-    Saves data from a specific SQL query into a file in Blob Storage. 
+    Saves data from a specific SQL query into a file in Blob Storage.
     Converting based on the SQL server type to a Json friendly output.
 
 
@@ -33,7 +37,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         ending with .sql extension. (templated)
     :param conn_id: reference to a specific sql connection
     :param database: reference to a specific database
-    :param parameters: (optional) the parameters to render the SQL query with.
+    :param params: (optional) the params to render the SQL query with.
     :param handler: (optional) the function that will be applied to the cursor (default: fetch_all_handler).
     :param split_statements: (optional) if split single SQL string into statements. By default, defers
         to the default value in the ``run`` method of the configured hook.
@@ -45,7 +49,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
     :param load_options: Optional keyword arguments that 'WasbHook.load_file()' takes.
     :param wasb_overwrite_object: Whether the blob to be uploaded should overwrite the current data.
     When wasb_overwrite_object is True, it will overwrite the existing data.
-    If set to False, the operation might fail with 
+    If set to False, the operation might fail with
     ResourceExistsError in case a blob object already exists. Defaults to True
     :param wasb_conn_id: Reference to the wasb connection. Defaults to wasb_default
     :param stringify_dict: Whether to dump Dictionary type objects
@@ -57,13 +61,13 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
     template_fields: Sequence[str] = (
         "conn_id",
         "sql",
-        "parameters",
+        "params",
         "blob_name",
         "container_name",
     )
 
     template_ext: Sequence[str] = (".sql", ".json")
-    template_fields_renderers = {"sql": ".sql", "parameters": "json"}
+    template_fields_renderers = {"sql": ".sql", "params": "json"}
 
     def __init__(
         self,
@@ -71,7 +75,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         sql: str,
         conn_id: str | None = None,
         database: str | None = None,
-        parameters: Mapping | Iterable | None = None,
+        params: dict | None = None,
         handler: Callable[[Any], Any] = fetch_all_handler,
         split_statements: bool | None = None,
         return_last: bool = True,
@@ -87,7 +91,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
     ) -> None:
         super().__init__(conn_id=conn_id, database=database, **kwargs)
         self.sql = sql
-        self.parameters = parameters
+        self.params = params or {}
         self.handler = handler
         self.split_statements = split_statements
         self.return_last = return_last
@@ -111,7 +115,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
 
         output = hook.run(
             sql=self.sql,
-            parameters=self.parameters,
+            parameters=self.params,
             handler=self.handler,
             return_last=self.return_last,
             **extra_kwargs,
@@ -168,6 +172,20 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
     def convert_types(self, row):
         """Convert values from DBAPI to output-friendly formats."""
         return self.convert_type(row, stringify_dict=self.stringify_dict)
+
+    def render_template_fields(self, context, jinja_env=None) -> None:
+        """Add the rendered 'params' to the context dictionary before running the templating"""
+        # Like the original method, get the env if not provided
+        if not jinja_env:
+            jinja_env = self.get_template_env()
+
+        # Run the render template on params and add it to the context
+        if self.params:
+            context["params"] = self.render_template(
+                self.params, context, jinja_env, set()
+            )
+        # Call the original method
+        super().render_template_fields(context=context, jinja_env=jinja_env)
 
 
 class WasbToSqlOperator(BaseSQLOperator):
@@ -263,7 +281,7 @@ class WasbToSqlOperator(BaseSQLOperator):
 
 
 class BaseAPIToWasbOperator(BaseOperator):
-    """ 
+    """
     Copy data from an API to Wasb in JSON format.
 
     :param data: The data to pass (templated)
@@ -283,10 +301,11 @@ class BaseAPIToWasbOperator(BaseOperator):
     :param load_options: Optional keyword arguments that 'WasbHook.load_file()' takes.
     :param wasb_overwrite_object: Whether the blob to be uploaded should overwrite the current data.
     When wasb_overwrite_object is True, it will overwrite the existing data.
-    If set to False, the operation might fail with ResourceExistsError in case a blob object already exists. Defaults to True    
+    If set to False, the operation might fail with ResourceExistsError in case a blob object already exists. Defaults to True
     :param max_file_size_bytes: To set the approx. maximum size bytes on a file.
-    
+
     """
+
     template_fields = (
         "data",
         "headers",
@@ -435,7 +454,7 @@ class AnbimaToWasbOperator(BaseAPIToWasbOperator):
             request_params=request_params,
             extra_options=extra_options,
         )
-        
+
         return response
 
 
@@ -458,8 +477,7 @@ class MSSQLToWasbOperator(BaseSQLToWasbOperator):
 
 
 class PostgresToWasbOperator(BaseSQLToWasbOperator):
-
-    def __init__(self, *, conn_id="postgres_default", **kwargs):
+    def __init__(self, *, conn_id="postgres", **kwargs):
         super().__init__(**kwargs, conn_id=conn_id)
 
     @classmethod

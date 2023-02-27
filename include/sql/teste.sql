@@ -1,1 +1,1 @@
-SELECT britech_id FROM funds where status = '{{parameters.active}}'
+SELECT britech_id FROM funds where status = '{{params.active}}'

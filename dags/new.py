@@ -1,6 +1,7 @@
 from pendulum import datetime
 from airflow import DAG
 from operators.custom_wasb import PostgresToWasbOperator
+from airflow.operators.python import PythonOperator
 
 default_args = {
     "owner": "airflow",
@@ -9,6 +10,9 @@ default_args = {
 
 
 
+def _generate():
+    return 'ativo'
+    
 with DAG(
     dag_id="asdsa",
     schedule=None,
@@ -16,19 +20,22 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     template_searchpath=["/opt/airflow/include/sql/"],
-):
-    
+    render_template_as_native_obj=True,
 
+):
+
+ 
+    generate = PythonOperator(task_id='generate',python_callable=_generate, do_xcom_push=True)
+    
     new = PostgresToWasbOperator(
         task_id="new",
-        sql="SELECT britech_id FROM funds WHERE status = '{{params.active}}'",
+        sql= 'teste.sql',
         database='userdata',
         blob_name="teste_anbima",
         container_name="rgbrprdblob",
-        params={"active": 'active'},
-
+        params = {"active":generate.output},
     )
 
-    new
+    generate >> new
 
 #  as_dict=True
