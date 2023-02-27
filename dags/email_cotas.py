@@ -382,7 +382,6 @@ with DAG(
                 "output_path": "/opt/airflow/data/all_cotas_pl_{{ds}}.html",
                 "funds_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
                 "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
-
             },
         )
 
@@ -506,19 +505,7 @@ with DAG(
             "output_path": "/opt/airflow/data/all_cotas_pl_{{ds}}.html",
             "funds_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
             "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
-
         },
-    )
-
-    chain(
-        is_business_day,
-        fetch_funds,
-        fetch_funds_return,
-    )
-
-    chain(
-        process_xcom(fetch_funds.output),
-        fetch_complementary_funds_data,
     )
 
     chain(
@@ -526,7 +513,15 @@ with DAG(
         fetch_indices,
         indices_sensor,
         fetch_indices_return,
-        render_template,
+        render_template
+    )
+
+    chain(indices_sensor, fetch_funds, fetch_funds_return)
+
+
+    chain(
+        process_xcom(fetch_funds.output),
+        fetch_complementary_funds_data,
     )
 
     chain([fetch_funds_return, fetch_complementary_funds_data], merge, render_template)
