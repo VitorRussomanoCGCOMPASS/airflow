@@ -1,22 +1,17 @@
 from typing import Callable, Union
-import json
 
 from hooks.anbima import AnbimaHook
 
 from airflow.exceptions import AirflowException
+from airflow.models import BaseOperator
 from airflow.utils.operator_helpers import determine_kwargs
 
 
-from airflow.models import BaseOperator
-import os
-
-
 class AnbimaOperator(BaseOperator):
-    template_fields = ("endpoint", "data", "headers", "output_path","request_params")
+    template_fields = ("endpoint", "data", "headers", "request_params")
 
     def __init__(
         self,
-        output_path: str,
         request_params: Union[dict, None] = None,
         endpoint: Union[None, str] = None,
         data: Union[str, dict, None] = None,
@@ -33,7 +28,6 @@ class AnbimaOperator(BaseOperator):
         self.response_check = response_check
         self.log_response = log_response
         self.data = data
-        self.output_path = output_path
         self.request_params = request_params or {}
     
     def execute(self, context):
@@ -56,9 +50,5 @@ class AnbimaOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        self.log.info(f"Writing to {self.output_path}")
-        output_dir = os.path.dirname(self.output_path)
-        os.makedirs(output_dir, exist_ok=True)
-
-        with open(self.output_path, "w") as file_:
-            json.dump(response.json(), fp=file_)
+        return response.json()
+    

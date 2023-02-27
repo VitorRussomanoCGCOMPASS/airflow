@@ -59,14 +59,14 @@ with DAG(
 
         wait_vna = AnbimaSensor(
             task_id="wait_vna",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts), -1)}}"},
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
         )
 
         fetch_vna = AnbimaOperator(
             task_id="fetch_vna",
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             output_path="/opt/airflow/data/anbima/vna_{{ds}}.json",
         )
 
@@ -85,14 +85,14 @@ with DAG(
 
         wait_debentures = AnbimaSensor(
             task_id="wait_debentures",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
         )
 
         fetch_debentures = AnbimaOperator(
             task_id="fetch_debentures",
             endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             output_path="/opt/airflow/data/anbima/debentures_{{ds}}.json",
         )
 
@@ -109,14 +109,14 @@ with DAG(
         )
         wait_cricra = AnbimaSensor(
             task_id="wait_cricra",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
         )
 
         fetch_cricra = AnbimaOperator(
             task_id="fetch_cricra",
             endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             output_path="/opt/airflow/data/anbima/cricra_{{ds}}.json",
         )
 
@@ -134,14 +134,14 @@ with DAG(
 
         wait_ima = AnbimaSensor(
             task_id="wait_ima",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
         )
 
         fetch_ima = AnbimaOperator(
             task_id="fetch_ima",
             endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             output_path="/opt/airflow/data/anbima/ima_{{ds}}.json",
         )
 

@@ -29,16 +29,15 @@ with DAG(
     )
     new = AnbimaOperator(
             task_id="new",
-            request_params={"data": "{{ macros.ds_add(ds, -1) }}"},
+            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
             do_xcom_push=True,
-            output_path='/opt/airflow/data/testeee.json'
         )  
     
     new2 = EmptyOperator(task_id='new_2')
     
     is_business_day >> new >> new2
-    
+
 
 
 #  as_dict=True
