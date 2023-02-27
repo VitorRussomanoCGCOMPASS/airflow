@@ -25,6 +25,7 @@ with DAG(
         task_id="is_business_day",
         python_callable=is_busday,
         provide_context=True,
+        do_xcom_push=False,
     )
     new = AnbimaOperator(
             task_id="new",
@@ -34,7 +35,10 @@ with DAG(
             output_path='/opt/airflow/data/testeee.json'
         )  
     
-    is_business_day >> new
+    new2 = EmptyOperator(task_id='new_2')
+    
+    is_business_day >> new >> new2
+    
 
 
 #  as_dict=True
