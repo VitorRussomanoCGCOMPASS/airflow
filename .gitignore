@@ -5,3 +5,6 @@ extra
 data
 .env
 remove
+__pycache__/
+*.py[cod]
+*$py.class
