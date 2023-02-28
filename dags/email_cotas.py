@@ -13,6 +13,7 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.common.sql.sensors.sql import SqlSensor
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
+from airflow.operators.python import BranchPythonOperator
 
 
 def splitdsformat(value) -> str:
@@ -145,6 +146,12 @@ def _render_template(
         fh.write(rendered_template)
 
 
+def _check_for_none(input):
+    if not input:
+        logging.info("Teste")
+        return False
+
+
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
@@ -182,6 +189,12 @@ with DAG(
             do_xcom_push=True,
         )
 
+        check_for_indices = ShortCircuitOperator(
+            task_id="check_for_indices",
+            python_callable=_check_for_none,
+            op_kwargs={"input": fetch_indices.output},
+        )
+
         fetch_funds = SQLExecuteQueryOperator(
             task_id="fetch_funds",
             sql="devops_id_text.sql",
@@ -191,6 +204,12 @@ with DAG(
                 "type": "funds",
             },
             do_xcom_push=True,
+        )
+
+        check_for_funds = ShortCircuitOperator(
+            task_id="check_for_funds",
+            python_callable=_check_for_none,
+            op_kwargs={"input": fetch_funds.output},
         )
 
         indices_sensor = BritechIndicesSensor(
@@ -293,9 +312,16 @@ with DAG(
             },
         )
 
-        chain(fetch_indices, indices_sensor, fetch_indices_return, render_template)
+        chain(
+            fetch_indices,
+            check_for_indices,
+            indices_sensor,
+            fetch_indices_return,
+            render_template,
+        )
         chain(
             fetch_funds,
+            check_for_funds,
             process_xcom(fetch_funds.output),
             funds_sql_sensor,
             [fetch_funds_return, fetch_complementary_funds_data],
@@ -411,90 +437,116 @@ with DAG(
         provide_context=True,
     )
 
-    fetch_indices = SQLExecuteQueryOperator(
-        task_id="fetch_indices",
-        sql="devops_id_text.sql",
-        params={
-            "dag": "prev_email_cotas_pl",
-            "task_group": "prev_email_cotas_pl",
-            "type": "indexes",
-        },
-        do_xcom_push=True,
-    )
+    with TaskGroup(group_id="indices") as indices:
 
-    indices_sensor = BritechIndicesSensor(
-        task_id="indice_sensor",
-        request_params={
-            "idIndice": fetch_indices.output,
-            "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-            "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-        },
-    )
+        fetch_indices = SQLExecuteQueryOperator(
+            task_id="fetch_indices",
+            sql="devops_id_text.sql",
+            params={
+                "dag": "prev_email_cotas_pl",
+                "task_group": "prev_email_cotas_pl",
+                "type": "indexes",
+            },
+            do_xcom_push=True,
+        )
 
-    fetch_indices_return = BritechOperator(
-        task_id="fetch_indices_return",
-        endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
-        request_params={
-            "idIndices": fetch_indices.output,
-            "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-        },
-        output_path="/opt/airflow/data/britech/rentabilidade",
-        filename="indices_{{ds}}.json",
-        do_xcom_push=False,
-    )
+        check_for_indices = ShortCircuitOperator(
+            task_id="check_for_indices",
+            python_callable=_check_for_none,
+            op_kwargs={"input": fetch_indices.output},
+        )
 
-    fetch_funds = SQLExecuteQueryOperator(
-        task_id="fetch_funds",
-        sql="devops_id_text.sql",
-        params={
-            "dag": "prev_email_cotas_pl",
-            "task_group": "prev_email_cotas_pl",
-            "type": "funds",
-        },
-        do_xcom_push=True,
-    )
+        indices_sensor = BritechIndicesSensor(
+            task_id="indice_sensor",
+            request_params={
+                "idIndice": fetch_indices.output,
+                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+            },
+        )
 
-    fetch_funds_return = BritechOperator(
-        task_id="fetch_funds_return",
-        endpoint="/Fundo/BuscaRentabilidadeFundos",
-        request_params={
-            "idCarteiras": fetch_funds.output,
-            "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-        },
-        output_path="/opt/airflow/data/britech/rentabilidade",
-        filename="prev_funds_{{ds}}.json",
-        do_xcom_push=False,
-    )
+        fetch_indices_return = BritechOperator(
+            task_id="fetch_indices_return",
+            endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
+            request_params={
+                "idIndices": fetch_indices.output,
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+            },
+            output_path="/opt/airflow/data/britech/rentabilidade",
+            filename="indices_{{ds}}.json",
+            do_xcom_push=False,
+        )
 
-    @task
-    def process_xcom(ids):
-        from itertools import chain
+        chain(fetch_indices, check_for_indices, indices_sensor, fetch_indices_return)
+    with TaskGroup(group_id="funds") as funds:
 
-        return tuple(map(int, list(chain(*ids))[-1].split(",")))
+        fetch_funds = SQLExecuteQueryOperator(
+            task_id="fetch_funds",
+            sql="devops_id_text.sql",
+            params={
+                "dag": "prev_email_cotas_pl",
+                "task_group": "prev_email_cotas_pl",
+                "type": "funds",
+            },
+            do_xcom_push=True,
+        )
 
-    fetch_complementary_funds_data = SQLQueryToLocalOperator(
-        task_id="fetch_complementary_funds_data",
-        file_path="/opt/airflow/data/britech/prev_funds_comp.json",
-        conn_id="postgres",
-        database="userdata",
-        sql=""" 
-            SELECT britech_id, to_char(inception_date,'YYYY-MM-DD') inception_date, apelido ,type 
-            FROM funds a 
-            WHERE britech_id = any(array{{ti.xcom_pull(task_ids='process_xcom')}})
-            """,
-        do_xcom_push=True,
-    )
+        check_for_funds = ShortCircuitOperator(
+            task_id="check_for_funds",
+            python_callable=_check_for_none,
+            op_kwargs={"input": fetch_funds.output},
+        )
 
-    merge = PythonOperator(
-        task_id="merge",
-        python_callable=_merge,
-        op_kwargs={
-            "output_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
-            "funds_path": "/opt/airflow/data/britech/rentabilidade/all_funds_{{ds}}.json",
-            "comp_path": "/opt/airflow/data/britech/all_funds_comp.json",
-            "filter": False,
-        },
-    )
+        fetch_funds_return = BritechOperator(
+            task_id="fetch_funds_return",
+            endpoint="/Fundo/BuscaRentabilidadeFundos",
+            request_params={
+                "idCarteiras": fetch_funds.output,
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+            },
+            output_path="/opt/airflow/data/britech/rentabilidade",
+            filename="prev_funds_{{ds}}.json",
+            do_xcom_push=False,
+        )
+
+        @task
+        def process_xcom(ids):
+            from itertools import chain
+
+            return tuple(map(int, list(chain(*ids))[-1].split(",")))
+
+        fetch_complementary_funds_data = SQLQueryToLocalOperator(
+            task_id="fetch_complementary_funds_data",
+            file_path="/opt/airflow/data/britech/prev_funds_comp.json",
+            conn_id="postgres",
+            database="userdata",
+            sql=""" 
+                SELECT britech_id, to_char(inception_date,'YYYY-MM-DD') inception_date, apelido ,type 
+                FROM funds a 
+                WHERE britech_id = any(array{{ti.xcom_pull(task_ids='process_xcom')}})
+                """,
+            do_xcom_push=True,
+        )
+
+        merge = PythonOperator(
+            task_id="merge",
+            python_callable=_merge,
+            op_kwargs={
+                "output_path": "/opt/airflow/data/prev_funds_final_{{ds}}.json",
+                "funds_path": "/opt/airflow/data/britech/rentabilidade/prev_funds_{{ds}}.json",
+                "comp_path": "/opt/airflow/data/britech/prev_funds_comp.json",
+                "filter": False,
+            },
+        )
+
+        chain(
+            indices_sensor,
+            fetch_funds,
+            check_for_funds,
+            [fetch_funds_return, fetch_complementary_funds_data],
+            merge,
+        )
+        chain(process_xcom(fetch_funds.output), fetch_complementary_funds_data)
 
     render_template = PythonOperator(
         task_id="render_template",
@@ -502,26 +554,11 @@ with DAG(
         op_kwargs={
             "template_path": "/opt/airflow/include/templates/",
             "template_file": "prev_internal_cotas_template.html",
-            "output_path": "/opt/airflow/data/all_cotas_pl_{{ds}}.html",
-            "funds_path": "/opt/airflow/data/all_funds_final_{{ds}}.json",
+            "output_path": "/opt/airflow/data/prev_cotas_pl_{{ds}}.html",
+            "funds_path": "/opt/airflow/data/prev_funds_final_{{ds}}.json",
             "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
         },
     )
 
-    chain(
-        is_business_day,
-        fetch_indices,
-        indices_sensor,
-        fetch_indices_return,
-        render_template
-    )
-
-    chain(indices_sensor, fetch_funds, fetch_funds_return)
-
-
-    chain(
-        process_xcom(fetch_funds.output),
-        fetch_complementary_funds_data,
-    )
-
-    chain([fetch_funds_return, fetch_complementary_funds_data], merge, render_template)
+    chain(is_business_day, indices)
+    chain([indices,funds],render_template)
