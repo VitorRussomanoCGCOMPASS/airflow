@@ -88,7 +88,7 @@ with DAG(
                     lambda id: {
                         "request_params": {
                             "idCarteira": id[-1],
-                            "dataInicio": '2018-01-01',
+                            "dataInicio": ds,
                             "dataFim": ds,
                         },
                         "filename": "fund_id" + str(id[-1]) + "_" + ds + ".json",

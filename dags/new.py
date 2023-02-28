@@ -1,12 +1,7 @@
 from pendulum import datetime
-from operators.custom_wasb import PostgresToWasbOperator
 from airflow import DAG
-from airflow.operators.empty import EmptyOperator
-from anbima_plug import is_busday
-from airflow.operators.python import ShortCircuitOperator
-from operators.custom_wasb import BritechToWasbOperator
-from operators.custom_wasb import AnbimaToWasbOperator
-from operators.anbima import AnbimaOperator
+from operators.custom_wasb import PostgresToWasbOperator
+from airflow.operators.python import PythonOperator
 
 default_args = {
     "owner": "airflow",
@@ -14,31 +9,33 @@ default_args = {
 }
 
 
+
+def _generate():
+    return 'ativo'
+    
 with DAG(
     dag_id="asdsa",
     schedule=None,
     default_args=default_args,
     catchup=False,
     max_active_runs=1,
+    template_searchpath=["/opt/airflow/include/sql/"],
+    render_template_as_native_obj=True,
+
 ):
-    is_business_day = ShortCircuitOperator(
-        task_id="is_business_day",
-        python_callable=is_busday,
-        provide_context=True,
-        do_xcom_push=False,
+
+ 
+    generate = PythonOperator(task_id='generate',python_callable=_generate, do_xcom_push=True)
+    
+    new = PostgresToWasbOperator(
+        task_id="new",
+        sql= 'teste.sql',
+        database='userdata',
+        blob_name="teste_anbima",
+        container_name="rgbrprdblob",
+        params = {"active":generate.output},
     )
-    new = AnbimaOperator(
-            task_id="new",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
-            endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
-            do_xcom_push=True,
-        )  
-    
-    new2 = EmptyOperator(task_id='new_2')
-    
-    is_business_day >> new >> new2
 
-
+    generate >> new
 
 #  as_dict=True
-
