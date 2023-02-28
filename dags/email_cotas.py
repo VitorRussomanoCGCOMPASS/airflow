@@ -13,8 +13,6 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.common.sql.sensors.sql import SqlSensor
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
-from airflow.operators.python import BranchPythonOperator
-
 
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
