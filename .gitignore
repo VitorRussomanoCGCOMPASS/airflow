@@ -5,3 +5,4 @@ extra
 data
 .env
 remove
+*.pyc 
