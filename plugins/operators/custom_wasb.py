@@ -24,8 +24,6 @@ from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
 
-import ast
-
 
 class BaseSQLToWasbOperator(BaseSQLOperator):
     """
@@ -76,6 +74,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         conn_id: str | None = None,
         database: str | None = None,
         params: dict | None = None,
+        dict_cursor: bool = False,
         handler: Callable[[Any], Any] = fetch_all_handler,
         split_statements: bool | None = None,
         return_last: bool = True,
@@ -102,9 +101,11 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         self.load_options = load_options or {"overwrite": wasb_overwrite_object}
         self.stringify_dict = stringify_dict
         self.max_file_size_bytes = max_file_size_bytes
+        self.dict_cursor = dict_cursor
 
     def execute(self, context: Context) -> None:
         self.log.info("Executing:  %s", self.sql)
+
         hook = self.get_db_hook()
         wasb_hook = WasbHook(wasb_conn_id=self.wasb_conn_id)
 
@@ -120,6 +121,7 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
             return_last=self.return_last,
             **extra_kwargs,
         )
+
         if self.split_statements is not None:
             if return_single_query_results(
                 self.sql, self.return_last, self.split_statements
@@ -159,10 +161,13 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
                 create_container=self.create_container,
                 **self.load_options,
             )
-
     def _process_output(
         self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
+        """If self.dict_cursor turns into dict"""
+        if self.dict_cursor:
+            column_names = list(map(lambda x: x.name,  descriptions[0]))
+            results = [dict(zip(column_names, row)) for row in results]
         return results
 
     @abc.abstractmethod
@@ -459,8 +464,8 @@ class AnbimaToWasbOperator(BaseAPIToWasbOperator):
 
 
 class MSSQLToWasbOperator(BaseSQLToWasbOperator):
-    def __init__(self, *, conn_id="mssql_default", **kwargs):
-        super().__init__(**kwargs, conn_id=conn_id)
+    def __init__(self, *, conn_id="mssql_default", database, **kwargs):
+        super().__init__(database=database, **kwargs, conn_id=conn_id)
 
     @classmethod
     def convert_type(cls, value, **kwargs):
@@ -476,9 +481,10 @@ class MSSQLToWasbOperator(BaseSQLToWasbOperator):
         return value
 
 
+
 class PostgresToWasbOperator(BaseSQLToWasbOperator):
-    def __init__(self, *, conn_id="postgres", **kwargs):
-        super().__init__(**kwargs, conn_id=conn_id)
+    def __init__(self, *, conn_id="postgres_default", database, **kwargs):
+        super().__init__(database=database, **kwargs, conn_id=conn_id)
 
     @classmethod
     def convert_type(cls, value, stringify_dict=True):
@@ -514,3 +520,5 @@ class PostgresToWasbOperator(BaseSQLToWasbOperator):
         if isinstance(value, Decimal):
             return float(value)
         return value
+
+
