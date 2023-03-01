@@ -103,13 +103,10 @@ def _render_template(
         HTML template path
 
     output_path : str
-        Local path for rendered template. # TODO : Change this so we use blob
 
     indices_path : str
-        Local path for indices data, by default None # TODO : Change this so we use blob
 
     funds_path : str
-        Local path for funds data, by default None # TODO: Change this so we use blob
 
     """
     import json
@@ -144,10 +141,12 @@ def _render_template(
         fh.write(rendered_template)
 
 
-def _check_for_none(input):
-    if not input:
-        logging.info("Teste")
-        return False
+def _check_for_none(input) -> bool:
+    if input:
+        return True
+    return False
+        
+
 
 
 default_args = {
@@ -346,7 +345,6 @@ with DAG(
         @task
         def process_xcom(ids):
             from itertools import chain
-
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         fetch_funds_return = BritechOperator(
@@ -510,7 +508,6 @@ with DAG(
         @task
         def process_xcom(ids):
             from itertools import chain
-
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         fetch_complementary_funds_data = SQLQueryToLocalOperator(
@@ -521,7 +518,7 @@ with DAG(
             sql=""" 
                 SELECT britech_id, to_char(inception_date,'YYYY-MM-DD') inception_date, apelido ,type 
                 FROM funds a 
-                WHERE britech_id = any(array{{ti.xcom_pull(task_ids='process_xcom')}})
+                WHERE britech_id = any(array{{ti.xcom_pull(task_ids='funds.process_xcom')}})
                 """,
             do_xcom_push=True,
         )
@@ -560,3 +557,7 @@ with DAG(
 
     chain(is_business_day, indices)
     chain([indices,funds],render_template)
+
+
+
+
