@@ -59,6 +59,15 @@ x-airflow-common:
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW__SMTP__SMTP_HOST: smtp.sendgrid.net
+    AIRFLOW__SMTP__SMTP_STARTTLS: False
+    AIRFLOW__SMTP__SMTP_SSL: False
+    AIRFLOW__SMTP__SMTP_USER: apikey
+    AIRFLOW__SMTP__SMTP_PORT: 587
+    AIRFLOW__SMTP__SMTP_MAIL_FROM: compass@info.cgcompass.com
+    AIRFLOW__EMAIL__EMAIL_BACKEND: airflow.providers.sendgrid.utils.emailer.send_email
+    AIRFLOW__EMAIL__EMAIL_CONN_ID: email_default
+    SENDGRID_MAIL_FROM: compass@info.cgcompass.com
   volumes:
     # host:container
     - ./dags:/opt/airflow/dags
