@@ -1,12 +1,10 @@
 import abc
 import datetime
 import json
-import os
-import pathlib
 import time
 from decimal import Decimal
 from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from hooks.anbima import AnbimaHook
 from hooks.britech import BritechHook
@@ -24,8 +22,7 @@ from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
 
-
-class BaseSQLToWasbOperator(BaseSQLOperator):
+class BaseSQLOperator(BaseSQLOperator):
     """
     Saves data from a specific SQL query into a file in Blob Storage.
     Converting based on the SQL server type to a Json friendly output.
@@ -40,19 +37,8 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
     :param split_statements: (optional) if split single SQL string into statements. By default, defers
         to the default value in the ``run`` method of the configured hook.
     :param return_last: (optional) return the result of only last statement (default: True).
-    :param container_name: Name of the container. (templated)
-    :param blob_name: Name of the blob. (templated)
-    :param create_container: Attempt to create the target container prior to uploading the blob. This is
-            useful if the target container may not exist yet. Defaults to False.
-    :param load_options: Optional keyword arguments that 'WasbHook.load_file()' takes.
-    :param wasb_overwrite_object: Whether the blob to be uploaded should overwrite the current data.
-    When wasb_overwrite_object is True, it will overwrite the existing data.
-    If set to False, the operation might fail with
-    ResourceExistsError in case a blob object already exists. Defaults to True
-    :param wasb_conn_id: Reference to the wasb connection. Defaults to wasb_default
     :param stringify_dict: Whether to dump Dictionary type objects
         (such as JSON columns) as a string.
-    :param max_file_size_bytes: To set the approx. maximum size bytes on a file.
 
     """
 
@@ -60,8 +46,6 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         "conn_id",
         "sql",
         "params",
-        "blob_name",
-        "container_name",
     )
 
     template_ext: Sequence[str] = (".sql", ".json")
@@ -78,12 +62,6 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         handler: Callable[[Any], Any] = fetch_all_handler,
         split_statements: bool | None = None,
         return_last: bool = True,
-        blob_name: str,
-        container_name: str,
-        create_container: bool = False,
-        load_options: dict | None = None,
-        wasb_overwrite_object: bool = True,
-        wasb_conn_id: str = "wasb_default",
         stringify_dict: bool = False,
         max_file_size_bytes: int = 1000000,
         **kwargs,
@@ -94,20 +72,14 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
         self.handler = handler
         self.split_statements = split_statements
         self.return_last = return_last
-        self.blob_name = blob_name
-        self.container_name = container_name
-        self.wasb_conn_id = wasb_conn_id
-        self.create_container = create_container
-        self.load_options = load_options or {"overwrite": wasb_overwrite_object}
         self.stringify_dict = stringify_dict
         self.max_file_size_bytes = max_file_size_bytes
         self.dict_cursor = dict_cursor
 
-    def execute(self, context: Context) -> None:
+    def execute(self, context: Context):
         self.log.info("Executing:  %s", self.sql)
 
         hook = self.get_db_hook()
-        wasb_hook = WasbHook(wasb_conn_id=self.wasb_conn_id)
 
         if self.split_statements is not None:
             extra_kwargs = {"split_statements": self.split_statements}
@@ -122,51 +94,28 @@ class BaseSQLToWasbOperator(BaseSQLOperator):
             **extra_kwargs,
         )
 
+        json_safe_output = json.dumps(output, default=self.convert_types)
+        
         if self.split_statements is not None:
             if return_single_query_results(
                 self.sql, self.return_last, self.split_statements
             ):
-                processed_output = self._process_output([output], hook.descriptions)[-1]
+                processed_output = self._process_output([json_safe_output], hook.descriptions)[-1]
 
-        processed_output = self._process_output(output, hook.descriptions)
+        processed_output = self._process_output(json_safe_output, hook.descriptions)
 
-        with NamedTemporaryFile(mode="w", suffix=".json") as tmp:
-
-            self.log.info("Writing data to temp file %s", tmp.name)
-
-            json.dump(processed_output, tmp, default=self.convert_types)
-            tmp.flush()
-
-            file_size = os.stat(tmp.name).st_size
-
-            if file_size >= self.max_file_size_bytes:
-                raise AirflowException(
-                    "Allowed file size is %s (bytes). Given file size is %s. ",
-                    self.max_file_size_bytes,
-                    file_size,
-                )
-
-            self.log.info(
-                "Uploading to wasb://%s as %s",
-                self.container_name,
-                self.blob_name,
-            )
-
-            blob_name = self.blob_name + pathlib.Path(tmp.name).suffix
-
-            wasb_hook.load_file(
-                file_path=tmp.name,
-                container_name=self.container_name,
-                blob_name=blob_name,
-                create_container=self.create_container,
-                **self.load_options,
-            )
+        return processed_output
+    
     def _process_output(
         self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
         """If self.dict_cursor turns into dict"""
         if self.dict_cursor:
-            column_names = list(map(lambda x: x.name,  descriptions[0]))
+            
+            print(descriptions)
+            print(results)
+
+            column_names = list(map(lambda x: x.name,  descriptions[0])) # type: ignore
             results = [dict(zip(column_names, row)) for row in results]
         return results
 
@@ -285,7 +234,7 @@ class WasbToSqlOperator(BaseSQLOperator):
         return hook
 
 
-class BaseAPIToWasbOperator(BaseOperator):
+class BaseAPIOperator(BaseOperator):
     """
     Copy data from an API to Wasb in JSON format.
 
@@ -298,16 +247,6 @@ class BaseAPIToWasbOperator(BaseOperator):
     :param log_response: Log the response (default: False)
     :param request_params: params in the URL for a GET request (templated)
     :param endpoint: The relative part of the full url.
-    :param wasb_conn_id: Reference to the wasb connection. Defaults to 'wasb_default'
-    :param container_name: Name of the container. (templated)
-    :param blob_name: Name of the blob. (templated)
-    :param create_container: Attempt to create the target container prior to uploading the blob. This is
-            useful if the target container may not exist yet. Defaults to False.
-    :param load_options: Optional keyword arguments that 'WasbHook.load_file()' takes.
-    :param wasb_overwrite_object: Whether the blob to be uploaded should overwrite the current data.
-    When wasb_overwrite_object is True, it will overwrite the existing data.
-    If set to False, the operation might fail with ResourceExistsError in case a blob object already exists. Defaults to True
-    :param max_file_size_bytes: To set the approx. maximum size bytes on a file.
 
     """
 
@@ -315,8 +254,6 @@ class BaseAPIToWasbOperator(BaseOperator):
         "data",
         "headers",
         "request_params",
-        "blob_name",
-        "container_name",
     )
 
     def __init__(
@@ -329,14 +266,7 @@ class BaseAPIToWasbOperator(BaseOperator):
         log_response: bool = False,
         request_params: dict | None = None,
         endpoint: str,
-        wasb_conn_id: str = "wasb_default",
-        blob_name: str,
-        container_name: str,
-        create_container: bool = False,
-        load_options: dict | None = None,
-        wasb_overwrite_object: bool = True,
-        max_file_size_bytes: int = 1000000,
-        **kwargs,
+        **kwargs
     ) -> None:
         super().__init__(**kwargs)
         self.endpoint = endpoint
@@ -347,51 +277,13 @@ class BaseAPIToWasbOperator(BaseOperator):
         self.log_response = log_response
         self.data = data
         self.json = json
-        self.blob_name = blob_name
-        self.container_name = container_name
-        self.wasb_conn_id = wasb_conn_id
-        self.create_container = create_container
-        self.load_options = load_options or {"overwrite": wasb_overwrite_object}
-        self.max_file_size_bytes = max_file_size_bytes
 
     def execute(self, context: Context):
 
         response = self.call_response(context)
 
-        wasb_hook = WasbHook(wasb_conn_id=self.wasb_conn_id)
+        return response
 
-        with NamedTemporaryFile(mode="w", suffix=".json") as tmp:
-
-            self.log.info("Writing data to temp file %s", tmp.name)
-
-            json.dump(response.json(), tmp)
-
-            tmp.flush()
-
-            file_size = os.stat(tmp.name).st_size
-
-            if file_size >= self.max_file_size_bytes:
-                raise AirflowException(
-                    "File size %s excedeed allowed size in bytes (%s) ",
-                    file_size,
-                    self.max_file_size_bytes,
-                )
-
-            self.log.info(
-                "Uploading to wasb://%s as %s",
-                self.container_name,
-                self.blob_name,
-            )
-
-            blob_name = self.blob_name + pathlib.Path(tmp.name).suffix
-
-            wasb_hook.load_file(
-                file_path=tmp.name,
-                container_name=self.container_name,
-                blob_name=blob_name,
-                create_container=self.create_container,
-                **self.load_options,
-            )
 
     @abc.abstractmethod
     def _call_response(
@@ -406,6 +298,7 @@ class BaseAPIToWasbOperator(BaseOperator):
 
     def call_response(self, context: Context) -> Response:
         "Call an specific API endpoint and generate the response"
+
         self.log.info("Calling HTTP Method")
         response = self._call_response(
             endpoint=self.endpoint,
@@ -425,7 +318,7 @@ class BaseAPIToWasbOperator(BaseOperator):
         return response
 
 
-class BritechToWasbOperator(BaseAPIToWasbOperator):
+class BritechOperator(BaseAPIOperator):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -444,7 +337,7 @@ class BritechToWasbOperator(BaseAPIToWasbOperator):
         return response
 
 
-class AnbimaToWasbOperator(BaseAPIToWasbOperator):
+class AnbimaOperator(BaseAPIOperator):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -463,7 +356,7 @@ class AnbimaToWasbOperator(BaseAPIToWasbOperator):
         return response
 
 
-class MSSQLToWasbOperator(BaseSQLToWasbOperator):
+class MSSQLToWasbOperator(BaseSQLOperator):
     def __init__(self, *, conn_id="mssql_default", database, **kwargs):
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
@@ -482,7 +375,7 @@ class MSSQLToWasbOperator(BaseSQLToWasbOperator):
 
 
 
-class PostgresToWasbOperator(BaseSQLToWasbOperator):
+class PostgresToWasbOperator(BaseSQLOperator):
     def __init__(self, *, conn_id="postgres_default", database, **kwargs):
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
@@ -520,5 +413,6 @@ class PostgresToWasbOperator(BaseSQLToWasbOperator):
         if isinstance(value, Decimal):
             return float(value)
         return value
+
 
 

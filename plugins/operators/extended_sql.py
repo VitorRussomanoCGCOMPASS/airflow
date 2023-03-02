@@ -10,9 +10,6 @@ from typing import Mapping, Iterable, Callable
 import ast
 
 
-
-
-
 class SQLQueryToLocalOperator(BaseSQLOperator):
     """
     Executes SQL code in a specific database

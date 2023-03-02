@@ -1,7 +1,7 @@
 import json
 import uuid
 from tempfile import NamedTemporaryFile
-
+from typing import Any
 from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 import os
@@ -14,7 +14,7 @@ class CustomXComBackendJSON(BaseXCom):
     # refer to an XCom that has been stored in Azure Blob Storage
     PREFIX = "xcom_wasb://"
     CONTAINER_NAME = "rgbrprdblob"
-    MAX_FILE_SIZE_BYTES = 10000
+    MAX_FILE_SIZE_BYTES = 100000
 
     @staticmethod
     def serialize_value(
@@ -43,10 +43,10 @@ class CustomXComBackendJSON(BaseXCom):
 
             file_size = os.stat(tmp.name).st_size
 
-            if file_size >= CustomXComBackendJSON.max_file_size_bytes:
+            if file_size >= CustomXComBackendJSON.MAX_FILE_SIZE_BYTES:
                 raise AirflowException(
                     "Allowed file size is %s (bytes). Given file size is %s. ",
-                    CustomXComBackendJSON.max_file_size_bytes,
+                    CustomXComBackendJSON.MAX_FILE_SIZE_BYTES,
                     file_size,
                 )
 
@@ -93,3 +93,16 @@ class CustomXComBackendJSON(BaseXCom):
             output = json.load(temp)
 
         return output
+
+
+    def orm_deserialize_value(self) -> Any:
+        """
+        Deserialize method which is used to reconstruct ORM XCom object.
+        This method should be overridden in custom XCom backends to avoid
+        unnecessary request or other resource consuming operations when
+        creating XCom orm model. This is used when viewing XCom listing
+        in the webserver, for example.
+        """
+
+        reference_string = BaseXCom._deserialize_value(self,True)
+        return reference_string

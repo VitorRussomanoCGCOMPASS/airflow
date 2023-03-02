@@ -68,6 +68,7 @@ x-airflow-common:
     AIRFLOW__EMAIL__EMAIL_BACKEND: airflow.providers.sendgrid.utils.emailer.send_email
     AIRFLOW__EMAIL__EMAIL_CONN_ID: email_default
     SENDGRID_MAIL_FROM: compass@info.cgcompass.com
+    AIRFLOW__CORE__XCOM_BACKEND : include.xcom_backend.CustomXComBackendJSON
   volumes:
     # host:container
     - ./dags:/opt/airflow/dags

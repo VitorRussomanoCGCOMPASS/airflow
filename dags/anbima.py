@@ -1,4 +1,5 @@
-from typing import Type
+import logging
+from typing import Any, Type
 
 from marshmallow_sqlalchemy import SQLAlchemySchema
 from operators.alchemy import SQLAlchemyOperator
@@ -6,33 +7,27 @@ from operators.anbima import AnbimaOperator
 from pendulum import datetime
 from sensors.anbima import AnbimaSensor
 from sqlalchemy.orm import Session
-from include.utils.is_business_day import _is_business_day
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.latest_only import LatestOnlyOperator
+from airflow.operators.python import ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
 from include.schemas.cricra import CriCraSchema
 from include.schemas.debentures import DebenturesSchema
 from include.schemas.ima import IMASchema
 from include.schemas.vna import VNASchema
-from airflow.utils.task_group import TaskGroup
-from airflow.decorators import task
+from include.utils.is_business_day import _is_business_day
+
 
 def _upload_task(
-    data_path: str, session: Session, mshm_schema: Type[SQLAlchemySchema], many: bool
+    data: Any, session: Session, mshm_schema: Type[SQLAlchemySchema], many: bool
 ) -> None:
-    import json
-
-    with open(data_path, "r") as _file:
-        data = json.load(_file)
 
     objs = mshm_schema(session=session).load(data, many=many)
+    logging.info("Adding objects to session")
     session.add_all(objs)
-
-
 
 
 default_args = {
@@ -41,7 +36,7 @@ default_args = {
     "mode": "reschedule",
     "timeout": 60 * 60,
     "catchup": False,
-}   
+}
 
 
 with DAG(
@@ -59,15 +54,18 @@ with DAG(
 
         wait_vna = AnbimaSensor(
             task_id="wait_vna",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts), -1)}}"},
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts), -1)}}"
+            },
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
         )
 
         fetch_vna = AnbimaOperator(
             task_id="fetch_vna",
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
-            output_path="/opt/airflow/data/anbima/vna_{{ds}}.json",
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
         )
 
         store_vna = SQLAlchemyOperator(
@@ -76,24 +74,26 @@ with DAG(
             python_callable=_upload_task,
             provide_context=True,
             op_kwargs={
-                "data_path": "/opt/airflow/data/anbima/vna_{{ds}}.json",
+                "data": fetch_vna.output,
                 "mshm_schema": VNASchema,
                 "many": True,
             },
-            depends_on_past=True,
         )
 
         wait_debentures = AnbimaSensor(
             task_id="wait_debentures",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
             endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
         )
 
         fetch_debentures = AnbimaOperator(
             task_id="fetch_debentures",
             endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
-            output_path="/opt/airflow/data/anbima/debentures_{{ds}}.json",
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
         )
 
         store_debentures = SQLAlchemyOperator(
@@ -102,22 +102,25 @@ with DAG(
             python_callable=_upload_task,
             provide_context=True,
             op_kwargs={
-                "data_path": "/opt/airflow/data/anbima/debentures_{{ds}}.json",
+                "data": fetch_debentures.output,
                 "mshm_schema": DebenturesSchema,
                 "many": True,
             },
         )
         wait_cricra = AnbimaSensor(
             task_id="wait_cricra",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
             endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
         )
 
         fetch_cricra = AnbimaOperator(
             task_id="fetch_cricra",
             endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
-            output_path="/opt/airflow/data/anbima/cricra_{{ds}}.json",
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
         )
 
         store_cricra = SQLAlchemyOperator(
@@ -126,7 +129,7 @@ with DAG(
             python_callable=_upload_task,
             provide_context=True,
             op_kwargs={
-                "data_path": "/opt/airflow/data/anbima/cricra_{{ds}}.json",
+                "data": fetch_cricra.output,
                 "mshm_schema": CriCraSchema,
                 "many": True,
             },
@@ -134,15 +137,18 @@ with DAG(
 
         wait_ima = AnbimaSensor(
             task_id="wait_ima",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
             endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
         )
 
         fetch_ima = AnbimaOperator(
             task_id="fetch_ima",
             endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
-            request_params={"data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"},
-            output_path="/opt/airflow/data/anbima/ima_{{ds}}.json",
+            request_params={
+                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+            },
         )
 
         store_ima = SQLAlchemyOperator(
@@ -151,11 +157,10 @@ with DAG(
             python_callable=_upload_task,
             provide_context=True,
             op_kwargs={
-                "data_path": "/opt/airflow/data/anbima/ima_{{ds}}.json",
+                "data": fetch_ima.output,
                 "mshm_schema": IMASchema,
                 "many": True,
             },
-            depends_on_past=True,
         )
 
         chain(
@@ -165,8 +170,6 @@ with DAG(
         )
 
     chain(is_business_day, fetch_from_anbima)
-
-    latest_only = LatestOnlyOperator(task_id="latest_only")
 
 
 """ 
