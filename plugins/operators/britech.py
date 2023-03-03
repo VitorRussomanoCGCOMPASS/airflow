@@ -71,14 +71,5 @@ class BritechOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        path = os.path.join(self.output_path, self.filename)  # type: ignore
-
-        if self.method == "GET" and path:
-            self.log.info(f"Writing to {path}")
-            output_dir = os.path.dirname(path)
-            os.makedirs(output_dir, exist_ok=True)
-
-            with open(path, "w") as file_:
-                json.dump(response.json(), fp=file_)
 
         return response.json()

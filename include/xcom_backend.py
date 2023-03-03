@@ -7,6 +7,7 @@ from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 import os
 from airflow.exceptions import AirflowException
 
+# TODO : SUFFIX /  PREFFIX DYNAMIC
 
 class CustomXComBackendJSON(BaseXCom):
     # the prefix is optional and used to make it easier to recognize
@@ -14,7 +15,7 @@ class CustomXComBackendJSON(BaseXCom):
     # refer to an XCom that has been stored in Azure Blob Storage
     PREFIX = "xcom_wasb://"
     CONTAINER_NAME = "rgbrprdblob"
-    MAX_FILE_SIZE_BYTES = 100000
+    MAX_FILE_SIZE_BYTES = 1000000
 
     @staticmethod
     def serialize_value(
@@ -26,8 +27,7 @@ class CustomXComBackendJSON(BaseXCom):
         map_index=None,
         **kwargs,
     ):
-
-        # the connection to Wasb is created by using the WasbHook with
+    # the connection to Wasb is created by using the WasbHook with
         # the conn id configured in Step 3
         hook = WasbHook(wasb_conn_id="wasb_default")
         # make sure the file_id is unique, either by using combinations of
@@ -69,11 +69,12 @@ class CustomXComBackendJSON(BaseXCom):
     def deserialize_value(result):
         # retrieve the relevant reference string from the metadata database
         reference_string = BaseXCom.deserialize_value(result=result)
-
         # create the Wasb connection using the WasbHook and recreate the key
         hook = WasbHook(wasb_conn_id="wasb_default")
         blob_key = reference_string.replace(CustomXComBackendJSON.PREFIX, "")
         # download the JSON file found at the location described by the
+
+
 
         # reference string to my_xcom.json
 
@@ -91,9 +92,8 @@ class CustomXComBackendJSON(BaseXCom):
             temp.seek(0)
 
             output = json.load(temp)
-
+            
         return output
-
 
     def orm_deserialize_value(self) -> Any:
         """
@@ -103,6 +103,5 @@ class CustomXComBackendJSON(BaseXCom):
         creating XCom orm model. This is used when viewing XCom listing
         in the webserver, for example.
         """
-
-        reference_string = BaseXCom._deserialize_value(self,True)
+        reference_string = BaseXCom._deserialize_value(self, True)
         return reference_string

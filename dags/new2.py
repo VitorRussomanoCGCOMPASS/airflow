@@ -1,7 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from pendulum import datetime
-from operators.custom_wasb import PostgresToWasbOperator
 from airflow.providers.sendgrid.utils.emailer import send_email
 
 
@@ -28,7 +27,7 @@ with DAG(
         python_callable=send_email,
         op_kwargs={
             "to": "Vitor.Ibanez@cgcompass.com",
-            "subject": "testando",
+            "subject": "CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             "html_content": source_code,
             "conn_id": "email_default",
         },

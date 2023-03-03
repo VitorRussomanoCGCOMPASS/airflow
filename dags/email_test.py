@@ -6,7 +6,6 @@ from airflow.operators.empty import EmptyOperator
 from airflow.providers.sendgrid.utils.emailer import send_email
 
 
-
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
     Eg. 2023-01-01T00:00:00 -> 2023-01-21"""
@@ -88,6 +87,7 @@ def _render_template(
 
     return rendered_template
 
+
 def print_the(input):
     print(input)
 
@@ -97,6 +97,8 @@ default_args = {
     "depends_on_past": False,
     "email_on_failure": False,
     "email": "Vitor.Ibanez@cgcompass.com",
+    "do_xcom_push": False,
+    "conn_id": "postgres",
 }
 with DAG(
     "email_test",
@@ -112,9 +114,9 @@ with DAG(
         op_kwargs={
             "template_path": "/opt/airflow/include/templates/",
             "template_file": "prev_internal_cotas_template.html",
-            "output_path": "/opt/airflow/data/prev_cotas_pl_{{ds}}.html",
-            "funds_path": "/opt/airflow/data/prev_funds_final_{{ds}}.json",
-            "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_{{ds}}.json",
+            "output_path": "/opt/airflow/data/prev_cotas_pl_2023-02-28.html",
+            "funds_path": "/opt/airflow/data/prev_funds_final_2023-02-28.json",
+            "indices_path": "/opt/airflow/data/britech/rentabilidade/indices_2023-02-28.json",
         },
         do_xcom_push=True,
     )
@@ -129,4 +131,3 @@ with DAG(
             "conn_id": "email_default",
         },
     )
-

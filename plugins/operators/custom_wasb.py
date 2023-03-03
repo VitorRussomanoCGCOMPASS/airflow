@@ -17,10 +17,17 @@ from airflow.providers.common.sql.hooks.sql import (
     fetch_all_handler,
     return_single_query_results,
 )
+
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
+
+
+# TODO : RENAME DICT_CURSOR
+# TODO : SEPARETE PROCESS OUTPUT AND TO DICT
+# FIXME :  TO DICT IS FUCKED WHEN DESCRIPTION IS ONE.
+
 
 class BaseSQLOperator(BaseSQLOperator):
     """
@@ -58,7 +65,7 @@ class BaseSQLOperator(BaseSQLOperator):
         conn_id: str | None = None,
         database: str | None = None,
         params: dict | None = None,
-        dict_cursor: bool = False,
+        results_to_dict: bool = False,
         handler: Callable[[Any], Any] = fetch_all_handler,
         split_statements: bool | None = None,
         return_last: bool = True,
@@ -74,7 +81,7 @@ class BaseSQLOperator(BaseSQLOperator):
         self.return_last = return_last
         self.stringify_dict = stringify_dict
         self.max_file_size_bytes = max_file_size_bytes
-        self.dict_cursor = dict_cursor
+        self.results_to_dict = results_to_dict
 
     def execute(self, context: Context):
         self.log.info("Executing:  %s", self.sql)
@@ -94,30 +101,48 @@ class BaseSQLOperator(BaseSQLOperator):
             **extra_kwargs,
         )
 
-        json_safe_output = json.dumps(output, default=self.convert_types)
-        
+
         if self.split_statements is not None:
             if return_single_query_results(
                 self.sql, self.return_last, self.split_statements
             ):
-                processed_output = self._process_output([json_safe_output], hook.descriptions)[-1]
+                processed_output = self._process_output(
+                    [output], hook.descriptions
+                )[-1]
 
-        processed_output = self._process_output(json_safe_output, hook.descriptions)
+        processed_output = self._process_output(output, hook.descriptions)
 
-        return processed_output
-    
+        json_safe_output = json.dumps(processed_output, default=self.convert_types)
+
+        return json_safe_output
+
+    @abc.abstractmethod
+    def process_output(
+        self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+        """Processes results from SQL along with descriptions"""
+
     def _process_output(
         self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
-        """If self.dict_cursor turns into dict"""
-        if self.dict_cursor:
-            
-            print(descriptions)
-            print(results)
 
-            column_names = list(map(lambda x: x.name,  descriptions[0])) # type: ignore
-            results = [dict(zip(column_names, row)) for row in results]
+        if self.results_to_dict:
+            results = self._results_to_dict(results, descriptions)
+
+        results = self.process_output(results, descriptions)
+
         return results
+
+    def _results_to_dict(
+        self, results: list[Any], descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+    
+        if isinstance(descriptions, list):
+            if descriptions[-1] is not None:
+                column_names = [getattr(i, "name", None) for i in descriptions[-1]]
+                results = [ dict(zip(column_names,i)) for i in results]
+        
+        return results 
 
     @abc.abstractmethod
     def convert_type(self, value, **kwargs):
@@ -266,7 +291,7 @@ class BaseAPIOperator(BaseOperator):
         log_response: bool = False,
         request_params: dict | None = None,
         endpoint: str,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.endpoint = endpoint
@@ -284,7 +309,6 @@ class BaseAPIOperator(BaseOperator):
 
         return response
 
-
     @abc.abstractmethod
     def _call_response(
         self,
@@ -296,7 +320,7 @@ class BaseAPIOperator(BaseOperator):
     ) -> Response:
         "Call an specific API endpoint and generate the response"
 
-    def call_response(self, context: Context) -> Response:
+    def call_response(self, context: Context):
         "Call an specific API endpoint and generate the response"
 
         self.log.info("Calling HTTP Method")
@@ -315,6 +339,13 @@ class BaseAPIOperator(BaseOperator):
             kwargs = determine_kwargs(self.response_check, [response], context)
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
+
+        output = self._process_response(response)
+
+        return output
+
+    def _process_response(self, response: Response):
+        """"""
         return response
 
 
@@ -323,7 +354,9 @@ class BritechOperator(BaseAPIOperator):
         super().__init__(**kwargs)
 
     @classmethod
-    def _call_response(cls, endpoint, data, headers, request_params, extra_options):
+    def _call_response(
+        cls, endpoint, data, headers, request_params, extra_options
+    ) -> Response:
         hook = BritechHook(method="GET")
 
         response = hook.run(
@@ -336,13 +369,18 @@ class BritechOperator(BaseAPIOperator):
         )
         return response
 
+    def _process_response(self, response: Response):
+        return response.json()
+
 
 class AnbimaOperator(BaseAPIOperator):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     @classmethod
-    def _call_response(cls, endpoint, data, headers, request_params, extra_options):
+    def _call_response(
+        cls, endpoint, data, headers, request_params, extra_options
+    ) -> Response:
         hook = AnbimaHook()
 
         response = hook.run(
@@ -355,8 +393,11 @@ class AnbimaOperator(BaseAPIOperator):
 
         return response
 
+    def _process_response(self, response: Response):
+        return response.json()
 
-class MSSQLToWasbOperator(BaseSQLOperator):
+
+class MSSQLOperator(BaseSQLOperator):
     def __init__(self, *, conn_id="mssql_default", database, **kwargs):
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
@@ -374,8 +415,7 @@ class MSSQLToWasbOperator(BaseSQLOperator):
         return value
 
 
-
-class PostgresToWasbOperator(BaseSQLOperator):
+class PostgresOperator(BaseSQLOperator):
     def __init__(self, *, conn_id="postgres_default", database, **kwargs):
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
@@ -414,5 +454,9 @@ class PostgresToWasbOperator(BaseSQLOperator):
             return float(value)
         return value
 
-
-
+    @classmethod
+    def process_output(
+        cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+        """Processes results from SQL along with descriptions"""
+        return results
