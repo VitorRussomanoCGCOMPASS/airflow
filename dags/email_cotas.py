@@ -11,7 +11,7 @@ from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
 from operators.file_share import FileShareOperator
 from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
-
+from include.xcom_backend import HtmlXcom
 
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
@@ -71,7 +71,7 @@ def _merge_v2(funds_data: list, complementary_data: str, filter: bool = False) -
 
 def _render_template_v2(
     html_template: str, indices_data: list[dict], complete_funds_data: str
-) -> str:
+) -> HtmlXcom:
     from jinja2 import Environment, BaseLoader
     import json
 
@@ -90,7 +90,7 @@ def _render_template_v2(
             "funds": json.loads(complete_funds_data),
         }
     )
-    return rendered_template
+    return HtmlXcom(rendered_template)
 
 
 def _check_for_none(input) -> bool:
@@ -486,7 +486,6 @@ with DAG(
         @task
         def process_xcom(ids) -> tuple[int, ...]:
             from itertools import chain
-
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         fetch_complementary_funds_data = PostgresOperator(
