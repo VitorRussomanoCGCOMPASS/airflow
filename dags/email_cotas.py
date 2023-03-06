@@ -570,6 +570,3 @@ with DAG(
     chain(is_business_day, fetch_template, render_template, send_email)
 
 
-# FIXME
-# WE HAVE TO USE POSTGRESOPERATOR AND EXECUTE QUERY DUE TO THE TRANSFORMATIONS
-# HOWEVER, EXECUTE QUERY DOES NOT HAVE THE RENDERING OF PARAMETERS and etc.
