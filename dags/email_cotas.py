@@ -1,17 +1,22 @@
+from operators.custom_wasb import (
+    BritechOperator,
+    PostgresOperator,
+    GeneralSQLExecuteQueryOperator,
+)
+from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
-from operators.custom_wasb import BritechOperator, PostgresOperator
+from sensors.sql import SqlSensor
+
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models.baseoperator import chain
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
-from airflow.providers.common.sql.sensors.sql import SqlSensor
+from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
-from operators.file_share import FileShareOperator
-from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
-from include.xcom_backend import HtmlXcom
+from include.xcom_backend import HTMLXcom
+
 
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
@@ -71,9 +76,10 @@ def _merge_v2(funds_data: list, complementary_data: str, filter: bool = False) -
 
 def _render_template_v2(
     html_template: str, indices_data: list[dict], complete_funds_data: str
-) -> HtmlXcom:
-    from jinja2 import Environment, BaseLoader
+) -> HTMLXcom:
     import json
+
+    from jinja2 import BaseLoader, Environment
 
     templateEnv = Environment(loader=BaseLoader())
 
@@ -90,7 +96,7 @@ def _render_template_v2(
             "funds": json.loads(complete_funds_data),
         }
     )
-    return HtmlXcom(rendered_template)
+    return HTMLXcom(rendered_template)
 
 
 def _check_for_none(input) -> bool:
@@ -128,7 +134,7 @@ with DAG(
         group_id="external-email-subset-funds"
     ) as external_email_subset_funds:
 
-        fetch_indices = SQLExecuteQueryOperator(
+        fetch_indices = GeneralSQLExecuteQueryOperator(
             task_id="fetch_indices",
             sql="devops_id_text.sql",
             params={
@@ -145,7 +151,7 @@ with DAG(
             do_xcom_push=False,
         )
 
-        fetch_funds = SQLExecuteQueryOperator(
+        fetch_funds = GeneralSQLExecuteQueryOperator(
             task_id="fetch_funds",
             sql="devops_id_text.sql",
             params={
@@ -178,10 +184,12 @@ with DAG(
 
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
+        processed_xcom = process_xcom(fetch_funds.output)
+
         funds_sql_sensor = SqlSensor(
             task_id="funds_sql_sensor",
             sql=""" 
-                WITH WorkTable(id) as (select britech_id from funds WHERE britech_id  = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}}))
+                WITH WorkTable(id) as (select britech_id from funds WHERE britech_id  = any(array{{params.ids}}))
                 SELECT ( SELECT COUNT(*)
                 FROM funds_values
                 WHERE funds_id IN ( SELECT id FROM WorkTable) 
@@ -190,7 +198,8 @@ with DAG(
                 """,
             hook_params={"database": "userdata"},
             do_xcom_push=False,
-        )  # type: ignore
+            parameters={"ids": processed_xcom},
+        )
 
         fetch_indices_return = BritechOperator(
             task_id="fetch_indices_return",
@@ -219,10 +228,10 @@ with DAG(
             FROM funds a 
             JOIN funds_values c 
             ON a.britech_id = c.funds_id 
-            WHERE britech_id = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}})
+            WHERE britech_id = any(array{{params.ids}})
             AND date = inception_date 
             OR  date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}'
-            AND britech_id = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}})
+            AND britech_id = any(array{{params.ids}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
             FROM Worktable)
@@ -232,6 +241,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
+            parameters={"ids": processed_xcom},
         )
 
         merge_and_filter = PythonOperator(
@@ -281,10 +291,11 @@ with DAG(
             fetch_indices_return,
             render_template,
         )
+
         chain(
             fetch_funds,
             check_for_funds,
-            process_xcom(fetch_funds.output),
+            processed_xcom,
             funds_sql_sensor,
             [fetch_funds_return, fetch_complementary_funds_data],
             merge_and_filter,
@@ -303,7 +314,7 @@ with DAG(
             do_xcom_push=False,
         )  # type: ignore
 
-        complete_fetch_funds = SQLExecuteQueryOperator(
+        complete_fetch_funds = GeneralSQLExecuteQueryOperator(
             task_id="complete_fetch_funds",
             sql="SELECT string_agg(britech_id::text,',') as britech_id from funds where status='ativo' ",
         )
@@ -314,6 +325,8 @@ with DAG(
 
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
+        processed_xcom = process_xcom(complete_fetch_funds.output)
+
         fetch_funds_return = BritechOperator(
             task_id="fetch_funds_return",
             endpoint="/Fundo/BuscaRentabilidadeFundos",
@@ -322,7 +335,6 @@ with DAG(
                 "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
             },
         )
-
         fetch_complementary_funds_data = PostgresOperator(
             task_id="fetch_complementary_funds_data",
             conn_id="postgres",
@@ -332,10 +344,10 @@ with DAG(
             FROM funds a 
             JOIN funds_values c 
             ON a.britech_id = c.funds_id 
-            WHERE britech_id = any(array{{ti.xcom_pull(task_ids='internal-email-all-funds.process_xcom')}})
+            WHERE britech_id = any(array{{params.ids}})
             AND date = inception_date 
             OR date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}'
-            AND britech_id = any(array{{ti.xcom_pull(task_ids='internal-email-all-funds.process_xcom')}})
+            AND britech_id = any(array{{params.ids}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
             FROM Worktable)
@@ -345,6 +357,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
+            parameters={"ids": processed_xcom},
         )
 
         merge = PythonOperator(
@@ -392,7 +405,6 @@ with DAG(
         chain(
             complete_funds_sql_sensor,
             complete_fetch_funds,
-            process_xcom(complete_fetch_funds.output),
             [fetch_funds_return, fetch_complementary_funds_data],
             merge,
             render_template,
@@ -417,7 +429,7 @@ with DAG(
 
     with TaskGroup(group_id="indices") as indices:
 
-        fetch_indices = SQLExecuteQueryOperator(
+        fetch_indices = GeneralSQLExecuteQueryOperator(
             task_id="fetch_indices",
             sql="devops_id_text.sql",
             params={
@@ -457,7 +469,7 @@ with DAG(
 
     with TaskGroup(group_id="funds") as funds:
 
-        fetch_funds = SQLExecuteQueryOperator(
+        fetch_funds = GeneralSQLExecuteQueryOperator(
             task_id="fetch_funds",
             sql="devops_id_text.sql",
             params={
@@ -486,7 +498,10 @@ with DAG(
         @task
         def process_xcom(ids) -> tuple[int, ...]:
             from itertools import chain
+
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
+
+        processed_xcom = process_xcom(fetch_funds.output)
 
         fetch_complementary_funds_data = PostgresOperator(
             task_id="fetch_complementary_funds_data",
@@ -495,9 +510,10 @@ with DAG(
             sql=""" 
                 SELECT britech_id, to_char(inception_date,'YYYY-MM-DD') inception_date, apelido ,type 
                 FROM funds a 
-                WHERE britech_id = any(array{{ti.xcom_pull(task_ids='funds.process_xcom')}})
+                WHERE britech_id = any(array{{params.ids}})
                 """,
             results_to_dict=True,
+            parameters={"ids": processed_xcom},
         )
 
         merge = PythonOperator(
@@ -517,7 +533,6 @@ with DAG(
             [fetch_funds_return, fetch_complementary_funds_data],
             merge,
         )
-        chain(process_xcom(fetch_funds.output), fetch_complementary_funds_data)
 
     fetch_template = FileShareOperator(
         task_id="fetch_template",
@@ -552,4 +567,9 @@ with DAG(
 
     chain(is_business_day, indices)
     chain([indices, funds], render_template)
-    chain(is_business_day, fetch_template, render_template,send_email)
+    chain(is_business_day, fetch_template, render_template, send_email)
+
+
+# FIXME
+# WE HAVE TO USE POSTGRESOPERATOR AND EXECUTE QUERY DUE TO THE TRANSFORMATIONS
+# HOWEVER, EXECUTE QUERY DOES NOT HAVE THE RENDERING OF PARAMETERS and etc.
