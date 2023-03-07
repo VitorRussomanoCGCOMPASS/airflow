@@ -24,12 +24,8 @@ from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
 
 
-# TODO : RENAME DICT_CURSOR
-# TODO : SEPARETE PROCESS OUTPUT AND TO DICT
-# FIXME :  TO DICT IS FUCKED WHEN DESCRIPTION IS ONE.
+class CustomBaseSQLOperator(BaseSQLOperator):
 
-
-class BaseSQLOperator(BaseSQLOperator):
     """
     Saves data from a specific SQL query into a file in Blob Storage.
     Converting based on the SQL server type to a Json friendly output.
@@ -52,11 +48,11 @@ class BaseSQLOperator(BaseSQLOperator):
     template_fields: Sequence[str] = (
         "conn_id",
         "sql",
-        "params",
+        "parameters",
     )
 
     template_ext: Sequence[str] = (".sql", ".json")
-    template_fields_renderers = {"sql": ".sql", "params": "json"}
+    template_fields_renderers = {"sql": ".sql", "parameters": "json"}
 
     def __init__(
         self,
@@ -64,24 +60,26 @@ class BaseSQLOperator(BaseSQLOperator):
         sql: str,
         conn_id: str | None = None,
         database: str | None = None,
-        params: dict | None = None,
+        parameters: dict | None = None,
         results_to_dict: bool = False,
         handler: Callable[[Any], Any] = fetch_all_handler,
         split_statements: bool | None = None,
         return_last: bool = True,
         stringify_dict: bool = False,
         max_file_size_bytes: int = 1000000,
+        autocommit: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(conn_id=conn_id, database=database, **kwargs)
         self.sql = sql
-        self.params = params or {}
+        self.parameters = parameters or {}
         self.handler = handler
         self.split_statements = split_statements
         self.return_last = return_last
         self.stringify_dict = stringify_dict
         self.max_file_size_bytes = max_file_size_bytes
         self.results_to_dict = results_to_dict
+        self.autocommit = autocommit
 
     def execute(self, context: Context):
         self.log.info("Executing:  %s", self.sql)
@@ -96,19 +94,16 @@ class BaseSQLOperator(BaseSQLOperator):
         output = hook.run(
             sql=self.sql,
             parameters=self.params,
-            handler=self.handler,
             return_last=self.return_last,
+            handler=self.handler if self.do_xcom_push else None,
             **extra_kwargs,
         )
-
 
         if self.split_statements is not None:
             if return_single_query_results(
                 self.sql, self.return_last, self.split_statements
             ):
-                processed_output = self._process_output(
-                    [output], hook.descriptions
-                )[-1]
+                processed_output = self._process_output([output], hook.descriptions)[-1]
 
         processed_output = self._process_output(output, hook.descriptions)
 
@@ -136,13 +131,13 @@ class BaseSQLOperator(BaseSQLOperator):
     def _results_to_dict(
         self, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
-    
+
         if isinstance(descriptions, list):
             if descriptions[-1] is not None:
                 column_names = [getattr(i, "name", None) for i in descriptions[-1]]
-                results = [ dict(zip(column_names,i)) for i in results]
-        
-        return results 
+                results = [dict(zip(column_names, i)) for i in results]
+
+        return results
 
     @abc.abstractmethod
     def convert_type(self, value, **kwargs):
@@ -159,10 +154,11 @@ class BaseSQLOperator(BaseSQLOperator):
             jinja_env = self.get_template_env()
 
         # Run the render template on params and add it to the context
-        if self.params:
+        if self.parameters:
             context["params"] = self.render_template(
-                self.params, context, jinja_env, set()
+                self.parameters, context, jinja_env, set()
             )
+
         # Call the original method
         super().render_template_fields(context=context, jinja_env=jinja_env)
 
@@ -397,12 +393,29 @@ class AnbimaOperator(BaseAPIOperator):
         return response.json()
 
 
-class MSSQLOperator(BaseSQLOperator):
-    def __init__(self, *, conn_id="mssql_default", database, **kwargs):
+class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
+    def process_output(
+        self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+        if self.results_to_dict:
+            results = self._results_to_dict(results, descriptions)
+
+        results = self.process_output(results, descriptions)
+
+        return results
+
+    def convert_type(self, value, **kwargs) -> Any:
+        return value
+
+
+class MSSQLOperator(CustomBaseSQLOperator):
+    def __init__(
+        self, *, conn_id="mssql_default", database: str | None = None, **kwargs
+    ) -> None:
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
     @classmethod
-    def convert_type(cls, value, **kwargs):
+    def convert_type(cls, value, **kwargs) -> float | str | Any:
         """
         Takes a value from MSSQL, and converts it to a value that's safe for JSON
 
@@ -415,12 +428,14 @@ class MSSQLOperator(BaseSQLOperator):
         return value
 
 
-class PostgresOperator(BaseSQLOperator):
-    def __init__(self, *, conn_id="postgres_default", database, **kwargs):
+class PostgresOperator(CustomBaseSQLOperator):
+    def __init__(
+        self, *, conn_id="postgres_default", database: str | None = None, **kwargs
+    ) -> None:
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
     @classmethod
-    def convert_type(cls, value, stringify_dict=True):
+    def convert_type(cls, value, stringify_dict=True) -> float | str | Any:
         """
         Takes a value from Postgres, and converts it to a value that's safe for JSON
 
