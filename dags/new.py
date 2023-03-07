@@ -1,7 +1,9 @@
 from pendulum import datetime
 from airflow import DAG
-from operators.custom_wasb import PostgresToWasbOperator
 from airflow.operators.python import PythonOperator
+import logging
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from operators.custom_wasb import MSSQLToWasbOperator
 
 default_args = {
     "owner": "airflow",
@@ -10,6 +12,7 @@ default_args = {
 
 
 def _generate():
+    logging.info("teste")
     return "ativo"
 
 
@@ -23,19 +26,15 @@ with DAG(
     render_template_as_native_obj=True,
 ):
 
-    generate = PythonOperator(
-        task_id="generate", python_callable=_generate, do_xcom_push=True
+    generate = MSSQLToWasbOperator(
+        conn_id="mssql_default",
+        sql="USE DB_Brasil SELECT * FROM dbo.Employee",
+        task_id="gen",
+        database="DB_Brasil",
+        blob_name='teste',
+        container_name='rgbrprdblob',
     )
 
-    new = PostgresToWasbOperator(
-        task_id="new",
-        sql="teste.sql",
-        database="userdata",
-        blob_name="teste_anbima",
-        container_name="rgbrprdblob",
-        params={"active": generate.output},
-    )
-
-    generate >> new
+    generate
 
 #  as_dict=True
