@@ -1,4 +1,3 @@
-import json
 import uuid
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -94,8 +93,8 @@ class CustomXComBackendJSON(BaseXCom):
             temp.flush()
             temp.seek(0)
 
-            output = json.load(temp)
-            
+            output = ujson.load(temp)
+
         return output
 
     def orm_deserialize_value(self) -> Any:
