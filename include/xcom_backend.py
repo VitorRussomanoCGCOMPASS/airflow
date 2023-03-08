@@ -13,11 +13,6 @@ import ujson
 # We can also add wrappers to file share operator for instance.
 
 
-class HTMLXcom:
-    def __init__(self, output, **kwargs) -> None:
-        self.output = output
-
-
 class CustomXComBackendJSON(BaseXCom):
     # the prefix is optional and used to make it easier to recognize
     # which reference strings in the Airflow metadata database
@@ -39,23 +34,17 @@ class CustomXComBackendJSON(BaseXCom):
 
         hook = WasbHook(wasb_conn_id="wasb_default")
 
-        if isinstance(value, HTMLXcom):
-            filename = "data_" + str(uuid.uuid4()) + ".html"
-        else:
-            # the connection to Wasb is created by using the WasbHook with
-            # the conn id configured in Step 3
-            # make sure the file_id is unique, either by using combinations of
-            # the task_id, run_id and map_index parameters or by using a uuid
-            filename = "data_" + str(uuid.uuid4()) + ".json"
-            # define the full blob key where the file should be stored
+        # the connection to Wasb is created by using the WasbHook with
+        # the conn id configured in Step 3
+        # make sure the file_id is unique, either by using combinations of
+        # the task_id, run_id and map_index parameters or by using a uuid
+        filename = "data_" + str(uuid.uuid4()) + ".json"
+        # define the full blob key where the file should be stored
 
         blob_key = f"{run_id}/{task_id}/{filename}"
 
         with NamedTemporaryFile(mode="w") as tmp:
-            if isinstance(value, HTMLXcom):
-                ujson.dump(value.output,tmp, encode_html_chars=True)
-            else:
-                ujson.dump(value, tmp)
+            ujson.dump(value, tmp, encode_html_chars=True)
 
             tmp.flush()
             # write the value to a local temporary JSON file
@@ -67,7 +56,7 @@ class CustomXComBackendJSON(BaseXCom):
                     "Allowed file size is %s (bytes). Given file size is %s. ",
                     CustomXComBackendJSON.MAX_FILE_SIZE_BYTES,
                     file_size,
-                )   
+                )
 
             # load the local JSON file into Azure Blob Storage
             hook.load_file(
@@ -91,9 +80,6 @@ class CustomXComBackendJSON(BaseXCom):
         reference_string = BaseXCom.deserialize_value(result=result)
 
         blob_key = reference_string.replace(CustomXComBackendJSON.PREFIX, "")
-        
-        print(reference_string)
-        print(blob_key)
 
         with NamedTemporaryFile() as temp:
 
@@ -108,15 +94,8 @@ class CustomXComBackendJSON(BaseXCom):
             temp.flush()
             temp.seek(0)
 
-            if reference_string.endswith(".html"):
-                output = json.load(temp)
-            else:
-                output = json.load(temp)
-                # avoid double encoding 
-                if isinstance(output,str):
-                    output =json.loads(output)
-
-
+            output = json.load(temp)
+            
         return output
 
     def orm_deserialize_value(self) -> Any:
@@ -129,4 +108,3 @@ class CustomXComBackendJSON(BaseXCom):
         """
         reference_string = BaseXCom._deserialize_value(self, True)
         return reference_string
- 
