@@ -99,6 +99,9 @@ class CustomBaseSQLOperator(BaseSQLOperator):
             **extra_kwargs,
         )
 
+        if not self.do_xcom_push:
+            return None
+        
         if self.split_statements is not None:
             if return_single_query_results(
                 self.sql, self.return_last, self.split_statements
@@ -394,17 +397,16 @@ class AnbimaOperator(BaseAPIOperator):
 
 
 class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
+
+    @classmethod
     def process_output(
-        self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
+        cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
-        if self.results_to_dict:
-            results = self._results_to_dict(results, descriptions)
-
-        results = self.process_output(results, descriptions)
-
+        """Processes results from SQL along with descriptions"""
         return results
-
-    def convert_type(self, value, **kwargs) -> Any:
+    
+    @classmethod
+    def convert_type(cls, value, **kwargs) -> Any:
         return value
 
 
@@ -427,6 +429,13 @@ class MSSQLOperator(CustomBaseSQLOperator):
             return value.isoformat()
         return value
 
+    @classmethod
+    def process_output(
+        cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+        """Processes results from SQL along with descriptions"""
+        return results
+    
 
 class PostgresOperator(CustomBaseSQLOperator):
     def __init__(

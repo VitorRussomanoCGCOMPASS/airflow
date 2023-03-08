@@ -1,8 +1,5 @@
-from operators.custom_wasb import (
-    BritechOperator,
-    PostgresOperator,
-    GeneralSQLExecuteQueryOperator,
-)
+from operators.custom_wasb import (BritechOperator,
+                                   PostgresOperator)
 from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
@@ -16,7 +13,10 @@ from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
 from include.xcom_backend import HTMLXcom
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
+
+# FIXME : THERE IS SOMETHING WRONG WITH SQL OPERATOR. PROBABLY BECAUSE OF THE DUAL DUMP.
 
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
@@ -44,13 +44,28 @@ def valueformat(value) -> str:
     return f"{value:0,.8f}".replace(".", ",")
 
 
-def _merge_v2(funds_data: list, complementary_data: str, filter: bool = False) -> str:
+def _merge_v2(funds_data: list[dict], complementary_data: list[dict], filter: bool = False) -> str:
+    """
+    Merges funds_data and complementary_data (funds name, inception date and return since inception) together
+    and optionally filters the returns of the fund that has less than 190 days since inception in conformity of regulation.
 
+
+    Parameters
+    ----------
+    funds_data : list
+    complementary_data : str
+    filter : bool, optional by default False
+
+    Returns
+    -------
+    str
+        Json formatted result
+    """    
     import pandas
 
     data = pandas.merge(
         pandas.DataFrame(funds_data),
-        pandas.read_json(complementary_data),
+        pandas.DataFrame(complementary_data),
         left_on="IdCarteira",
         right_on="britech_id",
     )
@@ -75,9 +90,18 @@ def _merge_v2(funds_data: list, complementary_data: str, filter: bool = False) -
 
 
 def _render_template_v2(
-    html_template: str, indices_data: list[dict], complete_funds_data: str
+    html_template: str, indices_data: list[dict], complete_funds_data: list[dict]
 ) -> HTMLXcom:
-    import json
+    """
+    Renders the html template containing jinja formatting with the data.
+
+    Returns
+    -------
+    HTMLXcom
+        Custom object so that the xcom backend does the proper serialization and deserialization given the html structure. 
+        Else it will probably corrupt the file.
+        
+    """
 
     from jinja2 import BaseLoader, Environment
 
@@ -93,7 +117,7 @@ def _render_template_v2(
     rendered_template = rtemplate.render(
         {
             "indices": indices_data,
-            "funds": json.loads(complete_funds_data),
+            "funds": complete_funds_data,
         }
     )
     return HTMLXcom(rendered_template)
@@ -103,6 +127,28 @@ def _check_for_none(input) -> bool:
     if input:
         return True
     return False
+
+
+def _process_xcom(ids: list[list[str]]) -> tuple[int, ...]:
+    """
+    Formats a nested list of a unique string containing all ids separated by comma (That is acceptable for the BritechOperator)
+    into an actual list of integers.
+
+    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => [10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9]
+
+    Parameters
+    ----------
+    ids : str
+        str formatted list of ids
+
+    Returns
+    -------
+    tuple[int, ...]
+
+    """
+    from itertools import chain
+
+    return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
 
 default_args = {
@@ -134,7 +180,7 @@ with DAG(
         group_id="external-email-subset-funds"
     ) as external_email_subset_funds:
 
-        fetch_indices = GeneralSQLExecuteQueryOperator(
+        fetch_indices = SQLExecuteQueryOperator(
             task_id="fetch_indices",
             sql="devops_id_text.sql",
             params={
@@ -151,7 +197,7 @@ with DAG(
             do_xcom_push=False,
         )
 
-        fetch_funds = GeneralSQLExecuteQueryOperator(
+        fetch_funds = SQLExecuteQueryOperator(
             task_id="fetch_funds",
             sql="devops_id_text.sql",
             params={
@@ -178,13 +224,12 @@ with DAG(
             do_xcom_push=False,
         )
 
-        @task
-        def process_xcom(ids) -> tuple[int, ...]:
-            from itertools import chain
-
-            return tuple(map(int, list(chain(*ids))[-1].split(",")))
-
-        processed_xcom = process_xcom(fetch_funds.output)
+        process_xcom = PythonOperator(
+            task_id="process_xcom",
+            python_callable=_process_xcom,
+            do_xcom_push=True,
+            op_kwargs={"ids": fetch_funds.output},
+        )
 
         funds_sql_sensor = SqlSensor(
             task_id="funds_sql_sensor",
@@ -198,7 +243,7 @@ with DAG(
                 """,
             hook_params={"database": "userdata"},
             do_xcom_push=False,
-            parameters={"ids": processed_xcom},
+            parameters={"ids": process_xcom.output},
         )
 
         fetch_indices_return = BritechOperator(
@@ -241,7 +286,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
-            parameters={"ids": processed_xcom},
+            parameters={"ids": process_xcom.output},
         )
 
         merge_and_filter = PythonOperator(
@@ -295,7 +340,7 @@ with DAG(
         chain(
             fetch_funds,
             check_for_funds,
-            processed_xcom,
+            process_xcom,
             funds_sql_sensor,
             [fetch_funds_return, fetch_complementary_funds_data],
             merge_and_filter,
@@ -314,18 +359,17 @@ with DAG(
             do_xcom_push=False,
         )  # type: ignore
 
-        complete_fetch_funds = GeneralSQLExecuteQueryOperator(
+        complete_fetch_funds = SQLExecuteQueryOperator(
             task_id="complete_fetch_funds",
             sql="SELECT string_agg(britech_id::text,',') as britech_id from funds where status='ativo' ",
         )
 
-        @task
-        def process_xcom(ids) -> tuple[int, ...]:
-            from itertools import chain
-
-            return tuple(map(int, list(chain(*ids))[-1].split(",")))
-
-        processed_xcom = process_xcom(complete_fetch_funds.output)
+        process_xcom = PythonOperator(
+            task_id="process_xcom",
+            python_callable=_process_xcom,
+            do_xcom_push=True,
+            op_kwargs={"ids": complete_fetch_funds.output},
+        )
 
         fetch_funds_return = BritechOperator(
             task_id="fetch_funds_return",
@@ -357,7 +401,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
-            parameters={"ids": processed_xcom},
+            parameters={"ids": process_xcom.output},
         )
 
         merge = PythonOperator(
@@ -429,7 +473,7 @@ with DAG(
 
     with TaskGroup(group_id="indices") as indices:
 
-        fetch_indices = GeneralSQLExecuteQueryOperator(
+        fetch_indices = PostgresOperator(
             task_id="fetch_indices",
             sql="devops_id_text.sql",
             params={
@@ -469,7 +513,7 @@ with DAG(
 
     with TaskGroup(group_id="funds") as funds:
 
-        fetch_funds = GeneralSQLExecuteQueryOperator(
+        fetch_funds = PostgresOperator(
             task_id="fetch_funds",
             sql="devops_id_text.sql",
             params={
@@ -495,13 +539,12 @@ with DAG(
             },
         )
 
-        @task
-        def process_xcom(ids) -> tuple[int, ...]:
-            from itertools import chain
-
-            return tuple(map(int, list(chain(*ids))[-1].split(",")))
-
-        processed_xcom = process_xcom(fetch_funds.output)
+        process_xcom = PythonOperator(
+            task_id="process_xcom",
+            python_callable=_process_xcom,
+            do_xcom_push=True,
+            op_kwargs={"ids": fetch_funds.output},
+        )
 
         fetch_complementary_funds_data = PostgresOperator(
             task_id="fetch_complementary_funds_data",
@@ -513,7 +556,7 @@ with DAG(
                 WHERE britech_id = any(array{{params.ids}})
                 """,
             results_to_dict=True,
-            parameters={"ids": processed_xcom},
+            parameters={"ids": process_xcom.output},
         )
 
         merge = PythonOperator(
@@ -568,5 +611,3 @@ with DAG(
     chain(is_business_day, indices)
     chain([indices, funds], render_template)
     chain(is_business_day, fetch_template, render_template, send_email)
-
-

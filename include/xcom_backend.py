@@ -6,6 +6,11 @@ from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 import os
 from airflow.exceptions import AirflowException
+import ujson
+
+# We could also use ujson enconde_html_characters=True
+# We can also return an specific backend from the postgres/mssql operator.
+# We can also add wrappers to file share operator for instance.
 
 
 class HTMLXcom:
@@ -48,9 +53,10 @@ class CustomXComBackendJSON(BaseXCom):
 
         with NamedTemporaryFile(mode="w") as tmp:
             if isinstance(value, HTMLXcom):
-                tmp.write(value.output)
+                ujson.dump(value.output,tmp, encode_html_chars=True)
             else:
-                json.dump(value, tmp)
+                ujson.dump(value, tmp)
+
             tmp.flush()
             # write the value to a local temporary JSON file
 
@@ -61,7 +67,7 @@ class CustomXComBackendJSON(BaseXCom):
                     "Allowed file size is %s (bytes). Given file size is %s. ",
                     CustomXComBackendJSON.MAX_FILE_SIZE_BYTES,
                     file_size,
-                )
+                )   
 
             # load the local JSON file into Azure Blob Storage
             hook.load_file(
@@ -85,6 +91,9 @@ class CustomXComBackendJSON(BaseXCom):
         reference_string = BaseXCom.deserialize_value(result=result)
 
         blob_key = reference_string.replace(CustomXComBackendJSON.PREFIX, "")
+        
+        print(reference_string)
+        print(blob_key)
 
         with NamedTemporaryFile() as temp:
 
@@ -100,10 +109,13 @@ class CustomXComBackendJSON(BaseXCom):
             temp.seek(0)
 
             if reference_string.endswith(".html"):
-                HtmlFile = open(temp.name, "r", encoding="utf-8")
-                output = HtmlFile.read()
+                output = json.load(temp)
             else:
                 output = json.load(temp)
+                # avoid double encoding 
+                if isinstance(output,str):
+                    output =json.loads(output)
+
 
         return output
 
@@ -117,3 +129,4 @@ class CustomXComBackendJSON(BaseXCom):
         """
         reference_string = BaseXCom._deserialize_value(self, True)
         return reference_string
+ 

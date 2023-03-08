@@ -1,7 +1,7 @@
 from airflow.models import BaseOperator
 from airflow.providers.microsoft.azure.hooks.fileshare import AzureFileShareHook
 from airflow.utils.context import Context
-
+from include.xcom_backend import HTMLXcom
 
 class FileShareOperator(BaseOperator):
     def __init__(
@@ -28,6 +28,7 @@ class FileShareOperator(BaseOperator):
                 self.share_name, self.directory_name, self.file_name
             )
 
+            # THIS IS AN OPTION. OR WE CAN USE UjSON.
             return result.content
 
         raise FileNotFoundError("No file named %s", self.file_name)
