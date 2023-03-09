@@ -19,6 +19,8 @@ from airflow.operators.latest_only import LatestOnlyOperator
 from operators.extended_sql import SQLQueryToLocalOperator
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
 
+
+
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
@@ -44,7 +46,6 @@ def _push_cotista_op(file_path: str, session: Session) -> None:
     # FIXME : COTISTA OP
     from flask_api.models.cotista_op import CotistaOP
     from sqlalchemy.dialects.postgresql import insert as pgs_upsert
-
     with open(file_path, "r") as _file:
         logging.info("Getting file.")
         data = json.load(_file)

@@ -5,6 +5,7 @@ from typing import Union
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 
+
 def get_session(conn_id: Union[str, None] = None, database: Union[str, None] = None):
     """
 

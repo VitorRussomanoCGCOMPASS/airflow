@@ -101,7 +101,7 @@ class CustomBaseSQLOperator(BaseSQLOperator):
 
         if not self.do_xcom_push:
             return None
-        
+
         if self.split_statements is not None:
             if return_single_query_results(
                 self.sql, self.return_last, self.split_statements
@@ -165,6 +165,27 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         # Call the original method
         super().render_template_fields(context=context, jinja_env=jinja_env)
 
+
+class InsertSQLOperator(BaseSQLOperator):
+    template_fields: Sequence[str] = (
+        "table",
+        "target_fields",
+    )
+
+    template_ext: Sequence[str] = ()
+
+    def __init__(
+        self,
+        conn_id: str | None = None,
+        database: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(conn_id=conn_id, database=database, **kwargs)
+
+
+    def execute(self, context: Context) -> None:
+        hook = self.get_db_hook()
+        self.log.info('Inserting rows into ')
 
 class WasbToSqlOperator(BaseSQLOperator):
     """
@@ -397,14 +418,13 @@ class AnbimaOperator(BaseAPIOperator):
 
 
 class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
-
     @classmethod
     def process_output(
         cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
         """Processes results from SQL along with descriptions"""
         return results
-    
+
     @classmethod
     def convert_type(cls, value, **kwargs) -> Any:
         return value
@@ -435,7 +455,7 @@ class MSSQLOperator(CustomBaseSQLOperator):
     ) -> list[Any]:
         """Processes results from SQL along with descriptions"""
         return results
-    
+
 
 class PostgresOperator(CustomBaseSQLOperator):
     def __init__(

@@ -1,5 +1,6 @@
 from pendulum import datetime
 from airflow import DAG
+from operators.write_audit_publish import TemporaryTableSQLOperator
 
 default_args = {
     "owner": "airflow",
@@ -15,4 +16,10 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/"],
     render_template_as_native_obj=True,
 ):
-    pass
+    temp = TemporaryTableSQLOperator(
+        database="DB_Brasil",
+        conn_id="mssql_default",
+        table="dbo.Employee",
+        task_id="temp",
+    )
+    temp
