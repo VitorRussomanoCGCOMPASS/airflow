@@ -8,7 +8,6 @@ from airflow.models.baseoperator import chain
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.operators.empty import EmptyOperator
 from operators.alchemy import SQLAlchemyOperatorLocal
-from airflow.providers.common.sql.operators.sql import BranchSQLOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.operators.empty import EmptyOperator
 

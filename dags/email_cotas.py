@@ -1,5 +1,4 @@
-from operators.custom_wasb import (BritechOperator,
-                                   PostgresOperator)
+from operators.custom_wasb import BritechOperator, PostgresOperator
 from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
@@ -18,9 +17,10 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 # FIXME : THERE IS SOMETHING WRONG WITH SQL OPERATOR. PROBABLY BECAUSE OF THE DUAL DUMP.
 
+
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
-    Eg. 2023-01-01T00:00:00 -> 2023-01-21"""
+    Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
     return value.split("T")[0]
 
 
@@ -44,7 +44,9 @@ def valueformat(value) -> str:
     return f"{value:0,.8f}".replace(".", ",")
 
 
-def _merge_v2(funds_data: list[dict], complementary_data: list[dict], filter: bool = False) -> str:
+def _merge_v2(
+    funds_data: list[dict], complementary_data: list[dict], filter: bool = False
+) -> str:
     """
     Merges funds_data and complementary_data (funds name, inception date and return since inception) together
     and optionally filters the returns of the fund that has less than 190 days since inception in conformity of regulation.
@@ -60,7 +62,7 @@ def _merge_v2(funds_data: list[dict], complementary_data: list[dict], filter: bo
     -------
     str
         Json formatted result
-    """    
+    """
     import pandas
 
     data = pandas.merge(
@@ -98,9 +100,9 @@ def _render_template_v2(
     Returns
     -------
     HTMLXcom
-        Custom object so that the xcom backend does the proper serialization and deserialization given the html structure. 
+        Custom object so that the xcom backend does the proper serialization and deserialization given the html structure.
         Else it will probably corrupt the file.
-        
+
     """
 
     from jinja2 import BaseLoader, Environment
@@ -218,8 +220,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             do_xcom_push=False,
         )
@@ -238,7 +240,7 @@ with DAG(
                 SELECT ( SELECT COUNT(*)
                 FROM funds_values
                 WHERE funds_id IN ( SELECT id FROM WorkTable) 
-	            AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}') =
+	            AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') =
 	   		    (SELECT COUNT(*) FROM WorkTable)
                 """,
             hook_params={"database": "userdata"},
@@ -251,7 +253,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
 
@@ -260,7 +262,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": fetch_funds.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
 
@@ -275,7 +277,7 @@ with DAG(
             ON a.britech_id = c.funds_id 
             WHERE britech_id = any(array{{params.ids}})
             AND date = inception_date 
-            OR  date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}'
+            OR  date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
             AND britech_id = any(array{{params.ids}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
@@ -354,7 +356,7 @@ with DAG(
 
         complete_funds_sql_sensor = SqlSensor(
             task_id="complete_funds_sql_sensor",
-            sql="SELECT ( SELECT COUNT(*) FROM funds_values WHERE funds_id IN ( SELECT britech_id FROM funds WHERE status='ativo') AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}') = (SELECT COUNT(*) FROM funds WHERE status='ativo')",
+            sql="SELECT ( SELECT COUNT(*) FROM funds_values WHERE funds_id IN ( SELECT britech_id FROM funds WHERE status='ativo') AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM funds WHERE status='ativo')",
             hook_params={"database": "userdata"},
             do_xcom_push=False,
         )  # type: ignore
@@ -376,7 +378,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": complete_fetch_funds.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
         fetch_complementary_funds_data = PostgresOperator(
@@ -390,7 +392,7 @@ with DAG(
             ON a.britech_id = c.funds_id 
             WHERE britech_id = any(array{{params.ids}})
             AND date = inception_date 
-            OR date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}'
+            OR date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
             AND britech_id = any(array{{params.ids}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
@@ -494,8 +496,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             do_xcom_push=False,
         )
@@ -505,7 +507,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
 
@@ -535,7 +537,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": fetch_funds.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
 
@@ -601,8 +603,9 @@ with DAG(
         task_id="send_email",
         python_callable=_send_email,
         op_kwargs={
-            "to": "Vitor.Ibanez@cgcompass.com",
-            "subject": "CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}} (COTAS PRÉVIAS)",
+            "to": "salesbrasil@cgcompass.com",
+            "cc": "middleofficebr@cgcompass.com",
+            "subject": "CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
             "html_content": render_template.output,
             "conn_id": "email_default",
         },

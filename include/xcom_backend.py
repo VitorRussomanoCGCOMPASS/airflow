@@ -1,3 +1,4 @@
+import json
 import uuid
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -5,11 +6,15 @@ from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 import os
 from airflow.exceptions import AirflowException
-import ujson
 
 # We could also use ujson enconde_html_characters=True
 # We can also return an specific backend from the postgres/mssql operator.
 # We can also add wrappers to file share operator for instance.
+
+# TODO :  We could def improve on this.
+class HTMLXcom:
+    def __init__(self, html_string: str, **kwargs) -> None:
+        self.html_string = html_string
 
 
 class CustomXComBackendJSON(BaseXCom):
@@ -33,17 +38,23 @@ class CustomXComBackendJSON(BaseXCom):
 
         hook = WasbHook(wasb_conn_id="wasb_default")
 
-        # the connection to Wasb is created by using the WasbHook with
-        # the conn id configured in Step 3
-        # make sure the file_id is unique, either by using combinations of
-        # the task_id, run_id and map_index parameters or by using a uuid
-        filename = "data_" + str(uuid.uuid4()) + ".json"
-        # define the full blob key where the file should be stored
+        if isinstance(value, HTMLXcom):
+            filename = "data_" + str(uuid.uuid4()) + ".html"
+        else:
+            # the connection to Wasb is created by using the WasbHook with
+            # the conn id configured in Step 3
+            # make sure the file_id is unique, either by using combinations of
+            # the task_id, run_id and map_index parameters or by using a uuid
+            filename = "data_" + str(uuid.uuid4()) + ".json"
+            # define the full blob key where the file should be stored
 
         blob_key = f"{run_id}/{task_id}/{filename}"
 
         with NamedTemporaryFile(mode="w") as tmp:
-            ujson.dump(value, tmp, encode_html_chars=True)
+            if isinstance(value, HTMLXcom):
+                tmp.write(value.html_string)
+            else:
+                json.dump(value, tmp)
 
             tmp.flush()
             # write the value to a local temporary JSON file
@@ -80,6 +91,9 @@ class CustomXComBackendJSON(BaseXCom):
 
         blob_key = reference_string.replace(CustomXComBackendJSON.PREFIX, "")
 
+        print(reference_string)
+        print(blob_key)
+
         with NamedTemporaryFile() as temp:
 
             hook.get_file(
@@ -93,7 +107,17 @@ class CustomXComBackendJSON(BaseXCom):
             temp.flush()
             temp.seek(0)
 
-            output = ujson.load(temp)
+            if reference_string.endswith(".html"):
+                HtmlFile = open(temp.name, "r", encoding="utf-8")
+                output = HtmlFile.read()
+            else:
+                output = json.load(temp)
+                if isinstance(output, str):
+                    # Try removing double encoded json
+                    try:
+                        output = json.loads(output)
+                    except json.decoder.JSONDecodeError:
+                        pass
 
         return output
 
