@@ -77,8 +77,11 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
         extra_kwargs = {}
 
         hook = self.get_db_hook()
-        conn = hook.get_conn()
+        engine = hook.get_sqlalchemy_engine()
 
+
+        with engine.connect() as conn:
+            engine.execute()
 
         with closing(conn) as conn:
             with closing(conn.cursor()) as cur:
