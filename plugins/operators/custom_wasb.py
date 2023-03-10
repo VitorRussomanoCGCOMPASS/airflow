@@ -6,22 +6,16 @@ from decimal import Decimal
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable, Iterable, Sequence
 
-from hooks.anbima import AnbimaHook
-from hooks.britech import BritechHook
-from requests import Response
 
 from airflow.compat.functools import cached_property
 from airflow.exceptions import AirflowException
-from airflow.models import BaseOperator
 from airflow.providers.common.sql.hooks.sql import (
     fetch_all_handler,
     return_single_query_results,
 )
-
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 from airflow.utils.context import Context
-from airflow.utils.operator_helpers import determine_kwargs
 
 
 class CustomBaseSQLOperator(BaseSQLOperator):
@@ -98,6 +92,7 @@ class CustomBaseSQLOperator(BaseSQLOperator):
             handler=self.handler if self.do_xcom_push else None,
             **extra_kwargs,
         )
+        
 
         if not self.do_xcom_push:
             return None
@@ -109,9 +104,10 @@ class CustomBaseSQLOperator(BaseSQLOperator):
                 processed_output = self._process_output([output], hook.descriptions)[-1]
 
         processed_output = self._process_output(output, hook.descriptions)
+        
 
         json_safe_output = json.dumps(processed_output, default=self.convert_types)
-
+        
         return json_safe_output
 
     @abc.abstractmethod
@@ -124,16 +120,23 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
 
-        if self.results_to_dict:
-            results = self._results_to_dict(results, descriptions)
 
         results = self.process_output(results, descriptions)
+
+        if self.results_to_dict:
+            results = self._results_to_dict(results, descriptions)
 
         return results
 
     def _results_to_dict(
         self, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
+        
+
+        # FIXME : THIS IS FUCKED FOR MSSQL.
+        # FIXME : MAYBE IT IS BEST IF WE jUST HAVE A METHOD THAT GENERATES THE HOOK AND WE USE DICT CURSOR
+        print(results)
+        print(descriptions)
 
         if isinstance(descriptions, list):
             if descriptions[-1] is not None:
@@ -165,27 +168,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         # Call the original method
         super().render_template_fields(context=context, jinja_env=jinja_env)
 
-
-class InsertSQLOperator(BaseSQLOperator):
-    template_fields: Sequence[str] = (
-        "table",
-        "target_fields",
-    )
-
-    template_ext: Sequence[str] = ()
-
-    def __init__(
-        self,
-        conn_id: str | None = None,
-        database: str | None = None,
-        **kwargs,
-    ) -> None:
-        super().__init__(conn_id=conn_id, database=database, **kwargs)
-
-
-    def execute(self, context: Context) -> None:
-        hook = self.get_db_hook()
-        self.log.info('Inserting rows into ')
 
 class WasbToSqlOperator(BaseSQLOperator):
     """
@@ -279,144 +261,6 @@ class WasbToSqlOperator(BaseSQLOperator):
         return hook
 
 
-class BaseAPIOperator(BaseOperator):
-    """
-    Copy data from an API to Wasb in JSON format.
-
-    :param data: The data to pass (templated)
-    :param headers: The HTTP headers to be added to the GET request
-    :param response_check: A check against the 'requests' response object.
-        The callable takes the response object as the first positional argument
-        and optionally any number of keyword arguments available in the context dictionary.
-        It should return True for 'pass' and False otherwise.    :param extra_options:
-    :param log_response: Log the response (default: False)
-    :param request_params: params in the URL for a GET request (templated)
-    :param endpoint: The relative part of the full url.
-
-    """
-
-    template_fields = (
-        "data",
-        "headers",
-        "request_params",
-    )
-
-    def __init__(
-        self,
-        *,
-        data: str | dict | None = None,
-        headers: dict | None = None,
-        response_check: Callable[..., bool] | None = None,
-        extra_options: dict | None = None,
-        log_response: bool = False,
-        request_params: dict | None = None,
-        endpoint: str,
-        **kwargs,
-    ) -> None:
-        super().__init__(**kwargs)
-        self.endpoint = endpoint
-        self.headers = headers or {}
-        self.request_params = request_params or {}
-        self.extra_options = extra_options or {}
-        self.response_check = response_check
-        self.log_response = log_response
-        self.data = data
-        self.json = json
-
-    def execute(self, context: Context):
-
-        response = self.call_response(context)
-
-        return response
-
-    @abc.abstractmethod
-    def _call_response(
-        self,
-        endpoint: str,
-        data: str | dict | None = None,
-        headers: dict | None = None,
-        request_params: dict | None = None,
-        extra_options: dict | None = None,
-    ) -> Response:
-        "Call an specific API endpoint and generate the response"
-
-    def call_response(self, context: Context):
-        "Call an specific API endpoint and generate the response"
-
-        self.log.info("Calling HTTP Method")
-        response = self._call_response(
-            endpoint=self.endpoint,
-            data=self.data,
-            headers=self.headers,
-            request_params=self.request_params,
-            extra_options=self.extra_options,
-        )
-
-        if self.log_response:
-            self.log.info(response.text)
-
-        if self.response_check:
-            kwargs = determine_kwargs(self.response_check, [response], context)
-            if not self.response_check(response, **kwargs):
-                raise AirflowException("Response check returned False.")
-
-        output = self._process_response(response)
-
-        return output
-
-    def _process_response(self, response: Response):
-        """"""
-        return response
-
-
-class BritechOperator(BaseAPIOperator):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    @classmethod
-    def _call_response(
-        cls, endpoint, data, headers, request_params, extra_options
-    ) -> Response:
-        hook = BritechHook(method="GET")
-
-        response = hook.run(
-            endpoint=endpoint,
-            data=data,
-            headers=headers,
-            request_params=request_params,
-            extra_options=extra_options,
-            json=None,
-        )
-        return response
-
-    def _process_response(self, response: Response):
-        return response.json()
-
-
-class AnbimaOperator(BaseAPIOperator):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    @classmethod
-    def _call_response(
-        cls, endpoint, data, headers, request_params, extra_options
-    ) -> Response:
-        hook = AnbimaHook()
-
-        response = hook.run(
-            endpoint=endpoint,
-            data=data,
-            headers=headers,
-            request_params=request_params,
-            extra_options=extra_options,
-        )
-
-        return response
-
-    def _process_response(self, response: Response):
-        return response.json()
-
-
 class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
     @classmethod
     def process_output(
@@ -434,19 +278,31 @@ class MSSQLOperator(CustomBaseSQLOperator):
     def __init__(
         self, *, conn_id="mssql_default", database: str | None = None, **kwargs
     ) -> None:
-        super().__init__(database=database, **kwargs, conn_id=conn_id)
+
+        if database is not None:
+            hook_params = kwargs.pop("hook_params", {})
+            kwargs["hook_params"] = {"database": database, **hook_params}
+
+        super().__init__(conn_id=conn_id, **kwargs)
 
     @classmethod
     def convert_type(cls, value, **kwargs) -> float | str | Any:
         """
         Takes a value from MSSQL, and converts it to a value that's safe for JSON
 
+        :param value: MSSQL Column value
+
         Datetime, Date and Time are converted to ISO formatted strings.
         """
+
+
+
         if isinstance(value, Decimal):
             return float(value)
+
         if isinstance(value, (datetime.date, datetime.time)):
             return value.isoformat()
+        
         return value
 
     @classmethod
@@ -473,7 +329,6 @@ class PostgresOperator(CustomBaseSQLOperator):
 
         Decimals are converted to floats.
         :param value: Postgres column value.
-        :param schema_type: BigQuery data type.
         :param stringify_dict: Specify whether to convert dict to string.
         """
 
@@ -482,8 +337,10 @@ class PostgresOperator(CustomBaseSQLOperator):
             if value.tzinfo is None:
                 return iso_format_value
             return parser.parse(iso_format_value).float_timestamp  # type: ignore
+
         if isinstance(value, datetime.date):
             return value.isoformat()
+
         if isinstance(value, datetime.time):
             formatted_time = time.strptime(str(value), "%H:%M:%S")
             time_delta = datetime.timedelta(
@@ -492,10 +349,13 @@ class PostgresOperator(CustomBaseSQLOperator):
                 seconds=formatted_time.tm_sec,
             )
             return str(time_delta)
+
         if stringify_dict and isinstance(value, dict):
             return json.dumps(value)
+
         if isinstance(value, Decimal):
             return float(value)
+
         return value
 
     @classmethod
