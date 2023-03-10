@@ -92,7 +92,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
             handler=self.handler if self.do_xcom_push else None,
             **extra_kwargs,
         )
-        
 
         if not self.do_xcom_push:
             return None
@@ -104,10 +103,9 @@ class CustomBaseSQLOperator(BaseSQLOperator):
                 processed_output = self._process_output([output], hook.descriptions)[-1]
 
         processed_output = self._process_output(output, hook.descriptions)
-        
 
         json_safe_output = json.dumps(processed_output, default=self.convert_types)
-        
+
         return json_safe_output
 
     @abc.abstractmethod
@@ -120,7 +118,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         self, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
 
-
         results = self.process_output(results, descriptions)
 
         if self.results_to_dict:
@@ -128,22 +125,11 @@ class CustomBaseSQLOperator(BaseSQLOperator):
 
         return results
 
+    @abc.abstractmethod
     def _results_to_dict(
         self, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
-        
-
-        # FIXME : THIS IS FUCKED FOR MSSQL.
-        # FIXME : MAYBE IT IS BEST IF WE jUST HAVE A METHOD THAT GENERATES THE HOOK AND WE USE DICT CURSOR
-        print(results)
-        print(descriptions)
-
-        if isinstance(descriptions, list):
-            if descriptions[-1] is not None:
-                column_names = [getattr(i, "name", None) for i in descriptions[-1]]
-                results = [dict(zip(column_names, i)) for i in results]
-
-        return results
+        ...
 
     @abc.abstractmethod
     def convert_type(self, value, **kwargs):
@@ -295,14 +281,12 @@ class MSSQLOperator(CustomBaseSQLOperator):
         Datetime, Date and Time are converted to ISO formatted strings.
         """
 
-
-
         if isinstance(value, Decimal):
             return float(value)
 
         if isinstance(value, (datetime.date, datetime.time)):
             return value.isoformat()
-        
+
         return value
 
     @classmethod
@@ -310,6 +294,28 @@ class MSSQLOperator(CustomBaseSQLOperator):
         cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
         """Processes results from SQL along with descriptions"""
+        output = []
+
+        for row in results:
+            output.append(tuple(row))
+
+        return output
+
+    @classmethod
+    def _results_to_dict(
+        cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+
+        # FIXME : THIS IS FUCKED FOR MSSQL.
+        # FIXME : MAYBE IT IS BEST IF WE jUST HAVE A METHOD THAT GENERATES THE HOOK AND WE USE DICT CURSOR
+
+        if isinstance(descriptions, list):
+            if descriptions[-1] is not None:
+                column_names = [
+                    column[0][0] if column is not None else None for column in descriptions
+                ]
+                results = [dict(zip(column_names, results[-1]))]
+
         return results
 
 
@@ -363,4 +369,19 @@ class PostgresOperator(CustomBaseSQLOperator):
         cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
         """Processes results from SQL along with descriptions"""
+        return results
+
+    @classmethod
+    def _results_to_dict(
+        cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
+    ) -> list[Any]:
+
+        # FIXME : THIS IS FUCKED FOR MSSQL.
+        # FIXME : MAYBE IT IS BEST IF WE jUST HAVE A METHOD THAT GENERATES THE HOOK AND WE USE DICT CURSOR
+
+        if isinstance(descriptions, list):
+            if descriptions[-1] is not None:
+                column_names = [getattr(i, "name", None) for i in descriptions[-1]]
+                results = [dict(zip(column_names, i)) for i in results]
+
         return results
