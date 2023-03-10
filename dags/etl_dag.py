@@ -23,8 +23,8 @@ with DAG(
         database= 'DB_Brasil',
         task_id="temp",
         sql ='select EmployeeID from Employee',
+        results_to_dict=True
     )
     temp
 
 
-a = [(('EmployeeID', 'int', None, 10, 10, 0, False),)]

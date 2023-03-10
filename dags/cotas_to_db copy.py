@@ -33,7 +33,7 @@ def _push_cotista_op(file_path: str, session, filename, **kwargs) -> None:
 
     from flask_api.models.funds import FundsValues
     from include.schemas.funds_values import FundsValuesSchemas
-    
+
     from sqlalchemy.dialects.postgresql import insert as pgs_upsert
 
     path = os.path.join(file_path, filename)
@@ -122,4 +122,3 @@ with DAG(
             push_funds_data,
             opening_new_day,
         )
-
