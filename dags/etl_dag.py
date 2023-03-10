@@ -1,6 +1,8 @@
 from pendulum import datetime
 from airflow import DAG
 from operators.write_audit_publish import TemporaryTableSQLOperator
+from operators.custom_wasb import MSSQLOperator , PostgresOperator
+
 
 default_args = {
     "owner": "airflow",
@@ -16,10 +18,13 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/"],
     render_template_as_native_obj=True,
 ):
-    temp = TemporaryTableSQLOperator(
-        database="DB_Brasil",
+    temp = MSSQLOperator(
         conn_id="mssql_default",
-        table="dbo.Employee",
+        database= 'DB_Brasil',
         task_id="temp",
+        sql ='select EmployeeID from Employee',
     )
     temp
+
+
+a = [(('EmployeeID', 'int', None, 10, 10, 0, False),)]
