@@ -1,14 +1,17 @@
-from typing import Sequence
-from airflow.providers.common.sql.operators.sql import BaseSQLOperator
-from sqlalchemy.orm.decl_api import DeclarativeMeta
-from airflow.utils.context import Context
-from typing import Iterable
-
 from contextlib import closing
+from typing import Iterable, Sequence
+
+from pyodbc import ProgrammingError
+from sqlalchemy.orm.decl_api import DeclarativeMeta
+
+from airflow.providers.common.sql.operators.sql import BaseSQLOperator
+from airflow.utils.context import Context
+
+# WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
 
 class TemporaryTableSQLOperator(BaseSQLOperator):
 
-    template_fields: Sequence[str] = ("table", "target_fields")
+    template_fields: Sequence[str] = ()
     template_ext: Sequence[str] = ()
 
     def __init__(
@@ -21,13 +24,17 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
         conn_id: str | None = None,
         database: str | None = None,
         **kwargs,
-    ):
+    ) -> None:
+
+        if database is not None:
+            hook_params = kwargs.pop("hook_params", {})
+            kwargs["hook_params"] = {"database": database, **hook_params}
+
         super().__init__(
             conn_id=conn_id,
-            database=database,
-            hook_params={"schema": "dbo", "database": "DB_Brasil"},
             **kwargs,
         )
+
         self.table = table
         self.target_fields = target_fields or ()
         self.temporary_table = temporary_table
@@ -42,8 +49,6 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
         empty: bool,
         **kwargs,
     ) -> str:
-        # TODO : SCHEMA AND DB.
-        # TODO :  WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
 
         if target_fields:
             if not isinstance(target_fields, Iterable):
@@ -60,9 +65,7 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
         if not temporary_table:
             temporary_table = table + "_temp"
 
-        sql = (
-            f"USE DB_Brasil SELECT {target_fields} INTO {temporary_table} FROM {table}"
-        )
+        sql = f"SELECT {target_fields} INTO {temporary_table} FROM {table}"
 
         if not empty:
             end = ";"
@@ -77,32 +80,34 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
         extra_kwargs = {}
 
         hook = self.get_db_hook()
-        engine = hook.get_sqlalchemy_engine()
 
+        with closing(hook.get_conn()) as conn:
 
-        with engine.connect() as conn:
-            engine.execute()
+            cur = conn.cursor()
 
-        with closing(conn) as conn:
-            with closing(conn.cursor()) as cur:
-                sql = self._generate_statement_sql(
-                    self.table,
-                    self.target_fields,
-                    self.temporary_table,
-                    self.empty,
-                    **extra_kwargs,
-                )
-                self.log.info("Generated sql: %s", sql)
-                try:
-                    cur.execute(sql)
-                except Exception as ex:
-                    conn.rollback()
-                    raise ex
+            sql = self._generate_statement_sql(
+                self.table,
+                self.target_fields,
+                self.temporary_table,
+                self.empty,
+                **extra_kwargs,
+            )
+
+            self.log.debug("Generated sql: %s", sql)
+
+            try:
+                cur.execute(sql)
+            except ProgrammingError as ex:
+                if ex.args[0] == "42S01":
+                    self.log.error("Table already exists")
+                    raise
+
+            finally:
+                cur.close()
 
             conn.commit()
 
-            self.log.info("Done. Created temporary table.")
-        return None
+        self.log.info("Done. Created temporary table.")
 
 
 class InsertSQLOperator(BaseSQLOperator):
