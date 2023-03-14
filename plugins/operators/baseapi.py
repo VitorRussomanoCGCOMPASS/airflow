@@ -41,7 +41,7 @@ class BaseAPIOperator(BaseOperator):
         log_response: bool = False,
         request_params: dict | None = None,
         endpoint: str,
-        json,
+        json: dict| None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
