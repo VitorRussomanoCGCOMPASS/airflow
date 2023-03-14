@@ -1,19 +1,18 @@
-from operators.custom_wasb import BritechOperator, PostgresOperator
+from operators.baseapi import BritechOperator
+from operators.custom_wasb import PostgresOperator
 from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
 from sensors.sql import SqlSensor
 
 from airflow import DAG
-from airflow.decorators import task
 from airflow.models.baseoperator import chain
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
 from include.xcom_backend import HTMLXcom
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
-
 
 # FIXME : THERE IS SOMETHING WRONG WITH SQL OPERATOR. PROBABLY BECAUSE OF THE DUAL DUMP.
 
@@ -89,7 +88,6 @@ def _merge_v2(
             ],
         ] = ""
     return data.to_json(orient="records")
-
 
 def _render_template_v2(
     html_template: str, indices_data: list[dict], complete_funds_data: list[dict]
