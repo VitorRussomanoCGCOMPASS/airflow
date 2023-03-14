@@ -8,14 +8,12 @@ from airflow.providers.common.sql.sensors.sql import SqlSensor
 from airflow.utils.task_group import TaskGroup
 from airflow.models.connection import Connection
 from airflow.hooks.base import BaseHook
-
-
-
+from airflow.providers.sendgrid.utils.emailer import send_email
+from operators.custom_sendgrid import SendGridOperator
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
-    "conn_id": "postgres",
     "database": "userdata",
     "mode": "reschedule",
     "timeout": 60 * 30,
@@ -24,8 +22,8 @@ default_args = {
 }
 
 
-def _print_conn(conn_id: Connection):
-    return BaseHook.get_connection(conn_id).get_uri()
+def _print(**kwargs):
+    print("OKe")
 
 
 with DAG(
@@ -38,8 +36,11 @@ with DAG(
     render_template_as_native_obj=True,
 ):
 
-    print_conn = PythonOperator(
-        task_id="print_conn",
-        python_callable=_print_conn,
-        op_kwargs={"conn_id": "email_default"},
+    emal = SendGridOperator(
+        task_id="send_email",
+        to="vitorrussomano@outlook.com",
+        conn_id="sendgrid_default",
+        subject="testing customiztaions",
+        html_content="customs is working?",
+        extra_arguments={"GroupId":15801},
     )

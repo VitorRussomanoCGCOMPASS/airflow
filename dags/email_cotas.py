@@ -14,9 +14,6 @@ from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
 from include.xcom_backend import HTMLXcom
 
-# FIXME : THERE IS SOMETHING WRONG WITH SQL OPERATOR. PROBABLY BECAUSE OF THE DUAL DUMP.
-
-
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
     Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
@@ -601,7 +598,7 @@ with DAG(
         task_id="send_email",
         python_callable=_send_email,
         op_kwargs={
-            "to": "salesbrasil@cgcompass.com",
+            "to": "vitor.ibanez@cgcompass.com",
             "cc": "middleofficebr@cgcompass.com",
             "subject": "CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
             "html_content": render_template.output,

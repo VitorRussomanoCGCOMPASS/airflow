@@ -66,9 +66,15 @@ x-airflow-common:
     AIRFLOW__SMTP__SMTP_PORT: 587
     AIRFLOW__SMTP__SMTP_MAIL_FROM: compass@info.cgcompass.com
     AIRFLOW__EMAIL__EMAIL_BACKEND: airflow.providers.sendgrid.utils.emailer.send_email
-    AIRFLOW__EMAIL__EMAIL_CONN_ID: email_default
+    AIRFLOW__EMAIL__EMAIL_CONN_ID: sendgrid_default
     SENDGRID_MAIL_FROM: compass@info.cgcompass.com
     AIRFLOW__CORE__XCOM_BACKEND : include.xcom_backend.CustomXComBackendJSON
+
+    #AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER : "wasb-logging"
+    #AIRFLOW__LOGGING__REMOTE_LOGGING : "True"
+    #AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID : "wasb_default"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG : "True"
+
   volumes:
     # host:container
     - ./dags:/opt/airflow/dags
@@ -206,7 +212,7 @@ services:
           echo "   https://airflow.apache.org/docs/apache-airflow/stable/start/docker.html#before-you-begin"
           echo
         fi
-        mkdir -p /sources/logs /sources/dags /sources/plugins
+        mkdir -p /sources/logs /sources/dags /sources/plugins 
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
         exec /entrypoint airflow version
       - exec /entrypoint airflow connections add 'postgres_new' --conn-uri 'postgres://airflow:airflow@postgres:5432/airflow'

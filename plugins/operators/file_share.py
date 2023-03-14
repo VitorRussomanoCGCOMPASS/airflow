@@ -9,7 +9,7 @@ class FileShareOperator(BaseOperator):
     def __init__(
         self,
         *,
-        conn_id: str = "azure_fileshare_default",
+        conn_id: str = "azure-fileshare-default",
         share_name: str,
         directory_name: str,
         file_name: str,
