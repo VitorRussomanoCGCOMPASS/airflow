@@ -1,13 +1,12 @@
+
+
+
 import os
 from typing import Iterable, Union, Sequence
 
 from sendgrid.helpers.mail import (
-    Asm,
-    Bcc,
-    Cc,
     Content,
     Email,
-    GroupId,
     Mail,
     MailSettings,
     Personalization,
@@ -20,7 +19,6 @@ from airflow.utils.context import Context
 from airflow.utils.email import get_email_address_list
 
 AddressesType = Union[str, Iterable[str]]
-
 
 class SendGridOperator(BaseOperator):
     template_fields: Sequence[str] = ("subject", "html_content", "to")
@@ -37,7 +35,7 @@ class SendGridOperator(BaseOperator):
         sandbox_mode: bool = False,
         conn_id: str = "sendgrid_default",
         is_multiple: bool = True,
-        extra_arguments: dict,
+        extra_attrs : dict |None = None,
         **kwargs,
     ) -> None:
         self.to = to
@@ -48,7 +46,7 @@ class SendGridOperator(BaseOperator):
         self.bcc = bcc
         self.sandbox_mode = sandbox_mode
         self.conn_id = conn_id
-        self.extra_arguments = extra_arguments or {}
+        self.extra_attrs= extra_attrs or {}
         self.is_multiple = is_multiple
         super().__init__(**kwargs)
 
@@ -56,12 +54,14 @@ class SendGridOperator(BaseOperator):
 
         mail = Mail(is_multiple=self.is_multiple)
 
-        from_email = self.extra_arguments.get("from_email") or os.environ.get(
-            "SENDGRID_MAIL_FROM"
-        )
-        from_name = self.extra_arguments.get("from_name") or os.environ.get(
-            "SENDGRID_MAIL_SENDER"
-        )
+        if 'from_email' not in self.extra_attrs:
+            self.extra_attrs['from_email'] = os.environ.get("SENDGRID_MAIL_FROM")
+
+        if 'from_name'  not in self.extra_attrs:
+            self.extra_attrs['from_name'] = os.environ.get("SENDGRID_MAIL_SENDER")
+        
+        from_email = self.extra_attrs.pop('from_email')
+        from_name = self.extra_attrs.pop('from_name')
 
         mail.from_email = Email(from_email, from_name)
         mail.subject = self.subject
@@ -86,9 +86,12 @@ class SendGridOperator(BaseOperator):
             for bcc_address in bcc:
                 personalization.add_bcc(Email(bcc_address))
 
-        group_id = self.extra_arguments.get("GroupId")
+        
+        for key in self.extra_attrs.keys():
+            setattr(mail,key, self.extra_attrs[key])
 
-        if group_id:
-            mail.asm = Asm(GroupId(group_id))
 
         _post_sendgrid_mail(mail.get(), self.conn_id)
+
+
+

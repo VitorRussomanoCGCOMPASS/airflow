@@ -8,7 +8,7 @@ from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
 # WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
-
+    
 class TemporaryTableSQLOperator(BaseSQLOperator):
 
     template_fields: Sequence[str] = ()
