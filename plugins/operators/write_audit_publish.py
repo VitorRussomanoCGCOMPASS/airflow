@@ -115,4 +115,8 @@ class InsertSQLOperator(BaseSQLOperator):
 
 
 class MergeSQLOperator(BaseSQLOperator):
-    pass
+
+    @classmethod
+    def generate_sql_statement(cls):
+        pass
+    
