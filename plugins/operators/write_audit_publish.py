@@ -8,6 +8,7 @@ from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 from typing import Any
 from sqlalchemy import Table, MetaData, insert
+from hooks.custom_sql import NewOp
 
 # WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
 class TemporaryTableSQLOperator(BaseSQLOperator):
@@ -110,7 +111,8 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
 
         self.log.info("Done. Created temporary table.")
 
-class InsertSQLOperator(BaseSQLOperator):
+
+class InsertSQLOperator(NewOp):
     def __init__(
         self,
         *,
@@ -130,11 +132,11 @@ class InsertSQLOperator(BaseSQLOperator):
             conn_id=conn_id,
             **kwargs,
         )
-    
-    # TODO : THIS COULD BE FASTER. 
+
     def execute(self, context: Context) -> None:
-        hook = self.get_db_hook()
-        engine = hook.get_sqlalchemy_engine()
+        # FIXME : THE PROBLEM HERE IS THAT GET SQLALCHEMY ENGINE REQUIRES TO ACCESS THE CONNECTION AGAIN.
+        #  This implies two external requests that slows down the process
+        engine = self.get_sqlalchemy_engine()
 
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
