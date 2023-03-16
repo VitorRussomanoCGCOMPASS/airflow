@@ -7,6 +7,7 @@ from sqlalchemy.orm.decl_api import DeclarativeMeta
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 from typing import Any
+from sqlalchemy import Table, MetaData, insert
 
 # WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
 class TemporaryTableSQLOperator(BaseSQLOperator):
@@ -109,10 +110,6 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
 
         self.log.info("Done. Created temporary table.")
 
-
-from sqlalchemy import Table, MetaData, insert, text
-
-
 class InsertSQLOperator(BaseSQLOperator):
     def __init__(
         self,
@@ -133,11 +130,11 @@ class InsertSQLOperator(BaseSQLOperator):
             conn_id=conn_id,
             **kwargs,
         )
-
-    def execute(self, context: Context):
+    
+    # TODO : THIS COULD BE FASTER. 
+    def execute(self, context: Context) -> None:
         hook = self.get_db_hook()
         engine = hook.get_sqlalchemy_engine()
-
 
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
@@ -149,9 +146,7 @@ class InsertSQLOperator(BaseSQLOperator):
             self.table = Table(self.table, metadata, autoload_with=engine)
 
         with engine.connect() as conn:
-
-            conn.execute(insert(self.table),[self.values])
-            
+            conn.execute(insert(self.table), [self.values])
 
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
@@ -169,4 +164,3 @@ class MergeSQLOperator(BaseSQLOperator):
         sql = self._generate_merge_sql()
 
         hook.run(sql=sql)
-

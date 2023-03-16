@@ -9,12 +9,12 @@ from airflow.utils.task_group import TaskGroup
 from airflow.models.connection import Connection
 from airflow.hooks.base import BaseHook
 from airflow.providers.sendgrid.utils.emailer import send_email
-from operators.custom_sendgrid import SendGridOperator
+
+from operators.write_audit_publish import InsertSQLOperator
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
-    "database": "userdata",
     "mode": "reschedule",
     "timeout": 60 * 30,
     "max_active_runs": 1,
@@ -35,12 +35,10 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/"],
     render_template_as_native_obj=True,
 ):
-
-    emal = SendGridOperator(
-        task_id="send_email",
-        to="vitorrussomano@outlook.com",
-        conn_id="sendgrid_default",
-        subject="testing customiztaions",
-        html_content="customs is working?",
-        extra_arguments={"GroupId":15801},
+    tes = InsertSQLOperator(
+        task_id='tess',
+        table="Employee_temp",
+        values={"EmployeeID": 12},
+        database="DB_Brasil",
+        conn_id="mssql_default",
     )

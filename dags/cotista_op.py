@@ -71,6 +71,7 @@ with DAG(
         python_callable=_is_business_day,
         provide_context=True,
     )
+
     with TaskGroup(group_id="new_cotista_op") as new_cotista_op:
         
         cotista_op_sensor = BritechEmptySensor(
