@@ -112,7 +112,7 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
         self.log.info("Done. Created temporary table.")
 
 
-class InsertSQLOperator(NewOp):
+class InsertSQLOperator(BaseSQLOperator):
     def __init__(
         self,
         *,
@@ -134,9 +134,8 @@ class InsertSQLOperator(NewOp):
         )
 
     def execute(self, context: Context) -> None:
-        # FIXME : THE PROBLEM HERE IS THAT GET SQLALCHEMY ENGINE REQUIRES TO ACCESS THE CONNECTION AGAIN.
-        #  This implies two external requests that slows down the process
-        engine = self.get_sqlalchemy_engine()
+        hook = self.get_db_hook()
+        engine = hook.get_sqlalchemy_engine()
 
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
@@ -153,16 +152,49 @@ class InsertSQLOperator(NewOp):
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
 
+def on_conflict_do_nothing():
+    pass
+
+
+def on_conflict_do_update():
+    pass
+
+
+from typing import Literal
+
+
 class MergeSQLOperator(BaseSQLOperator):
-    def __init__(self, **kwargs) -> None:
+    def __init__(
+        self,
+        *,
+        source_table: str | None = None,
+        target_table: DeclarativeMeta | Table | str,
+        on_conflict=Literal["do_nothing", "do_update"],
+        **kwargs,
+    ) -> None:
         super().__init__(**kwargs)
+        self.source_table = source_table
+        self.target_table = target_table
 
     @classmethod
-    def _generate_merge_sql(cls) -> str:
-        return ""
+    def generate_merge_sql(cls, target_table: Table, source_table: str):
+        pass
 
     def execute(self, context: Context):
-        hook = self.get_db_hook()
-        sql = self._generate_merge_sql()
 
-        hook.run(sql=sql)
+        hook = self.get_db_hook()
+        engine = hook.get_sqlalchemy_engine()
+
+        if isinstance(self.target_table, DeclarativeMeta):
+            # Transform into Table Object for consistency
+            self.target_table = getattr(self.target_table, "__table__")
+
+        if not isinstance(self.target_table, Table):
+            # if target_table is str, we generate the model
+            metadata = MetaData()
+            metadata.reflect(bind=engine)
+            self.target_table = Table(self.target_table, metadata, autoload_with=engine)
+
+        if not self.source_table:
+            self.source_table = self.target_table.name + "_temp"
+        # Now we have source_table as string and target_table as TABLE.
