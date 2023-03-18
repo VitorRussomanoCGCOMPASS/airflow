@@ -36,7 +36,7 @@ class CustomXComBackendJSON(BaseXCom):
         **kwargs,
     ):
 
-        hook = WasbHook(wasb_conn_id="wasb_default")
+        hook = WasbHook(wasb_conn_id="wasb-default")
 
         if isinstance(value, HTMLXcom):
             filename = "data_" + str(uuid.uuid4()) + ".html"
