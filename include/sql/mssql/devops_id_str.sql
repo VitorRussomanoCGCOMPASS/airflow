@@ -1,0 +1,1 @@
+select string_agg(id, ',') as id from devops where dag = '{{params.dag}}' and task_group = '{{params.task_group}}' and type ='{{params.type}}'

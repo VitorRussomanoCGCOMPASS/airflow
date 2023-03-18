@@ -1,14 +1,13 @@
 from contextlib import closing
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from pyodbc import ProgrammingError
+from sqlalchemy import MetaData, Table, insert
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
-from typing import Any
-from sqlalchemy import Table, MetaData, insert
-from hooks.custom_sql import NewOp
+
 
 # WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
 class TemporaryTableSQLOperator(BaseSQLOperator):

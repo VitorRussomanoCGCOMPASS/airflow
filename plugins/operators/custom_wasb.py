@@ -155,98 +155,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         super().render_template_fields(context=context, jinja_env=jinja_env)
 
 
-class WasbToSqlOperator(BaseSQLOperator):
-    """
-    Loads Data from Blob into a SQL Database
-    Need to provide a parser function that takes a filename as an input and returns an iterable of rows
-
-    :param blob_name:
-    :param container_name:
-    :param wasb_conn_id:
-    :param file_path:
-    :param table:
-    :param parser:
-    :param column_list:
-    :param commit_every:
-    :param schema:
-    :param conn_id:
-
-    """
-
-    template_fields: Sequence[str] = (
-        "conn_id",
-        "schema",
-        "table",
-        "column_list",
-        "file_path",
-        "blob_name",
-        "container_name",
-    )
-    template_ext: Sequence[str] = ()
-
-    def __init__(
-        self,
-        *,
-        blob_name: str,
-        container_name: str,
-        file_path: str,
-        table: str,
-        parser: Callable[[str], Iterable[Iterable]],
-        column_list: list[str] | None = None,
-        commit_every: int = 1000,
-        schema: str | None = None,
-        conn_id: str,
-        wasb_conn_id: str = "wasb_default",
-        **kwargs,
-    ) -> None:
-        super().__init__(**kwargs)
-        self.blob_name = blob_name
-        self.container_name = container_name
-        self.table = table
-        self.parser = parser
-        self.column_list = column_list
-        self.commit_every = commit_every
-        self.schema = schema
-        self.conn_id = conn_id
-        self.wasb_conn_id = wasb_conn_id
-        self.file_path = file_path
-
-    def execute(self, context: Context):
-        self.log.info("Loading %s to SQL table %s...", self.blob_name, self.table)
-
-        wasb_hook = WasbHook(wasb_conn_id=self.wasb_conn_id)
-
-        with NamedTemporaryFile() as temp:
-
-            self.log.info("Downloading data from blob: %s", self.blob_name)
-            wasb_hook.get_file(
-                file_path=temp.name,
-                container_name=self.container_name,
-                blob_name=self.blob_name,
-            )
-
-            temp.flush()
-            temp.seek(0)
-
-            self.db_hook.insert_rows(
-                table=self.table,
-                schema=self.schema,
-                target_fields=self.column_list,
-                rows=self.parser(temp.name),
-                commit_every=self.commit_every,
-            )
-
-    @cached_property
-    def db_hook(self):
-        self.log.debug("Get connection for %s: ", self.conn_id)
-        hook = self.get_db_hook()
-        if not callable(getattr(hook, "insert_rows", None)):
-            raise AirflowException(
-                "This hook is not supported. The hook class must have an `insert_rows` method."
-            )
-        return hook
-
-
 class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
     @classmethod
     def process_output(
@@ -305,9 +213,6 @@ class MSSQLOperator(CustomBaseSQLOperator):
     def _results_to_dict(
         cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
-
-        # FIXME : THIS IS FUCKED FOR MSSQL.
-        # FIXME : MAYBE IT IS BEST IF WE jUST HAVE A METHOD THAT GENERATES THE HOOK AND WE USE DICT CURSOR
 
         if isinstance(descriptions, list):
             if descriptions[-1] is not None:
@@ -376,8 +281,6 @@ class PostgresOperator(CustomBaseSQLOperator):
         cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
 
-        # FIXME : THIS IS FUCKED FOR MSSQL.
-        # FIXME : MAYBE IT IS BEST IF WE jUST HAVE A METHOD THAT GENERATES THE HOOK AND WE USE DICT CURSOR
 
         if isinstance(descriptions, list):
             if descriptions[-1] is not None:

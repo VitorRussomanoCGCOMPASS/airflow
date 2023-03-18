@@ -33,7 +33,7 @@ class SendGridOperator(BaseOperator):
         cc: AddressesType | None = None,
         bcc: AddressesType | None = None,
         sandbox_mode: bool = False,
-        conn_id: str = "sendgrid_default",
+        sendgrid_conn_id: str = "sendgrid-default",
         is_multiple: bool = True,
         extra_attrs : dict |None = None,
         **kwargs,
@@ -45,7 +45,7 @@ class SendGridOperator(BaseOperator):
         self.cc = cc
         self.bcc = bcc
         self.sandbox_mode = sandbox_mode
-        self.conn_id = conn_id
+        self.sendgrid_conn_id = sendgrid_conn_id
         self.extra_attrs= extra_attrs or {}
         self.is_multiple = is_multiple
         super().__init__(**kwargs)
@@ -91,7 +91,7 @@ class SendGridOperator(BaseOperator):
             setattr(mail,key, self.extra_attrs[key])
 
 
-        _post_sendgrid_mail(mail.get(), self.conn_id)
+        _post_sendgrid_mail(mail.get(), self.sendgrid_conn_id)
 
 
 
