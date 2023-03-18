@@ -6,18 +6,17 @@ import requests
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 
-# COMPLETE :  THE ANBIMA HOOK IS NOT SENDING THE PROPER HEADER.
 
 class AnbimaHook(BaseHook):
-    def __init__(self, conn_id="anbima_api"):  # , conn_id = 'anbima_api'
-        super().__init__()
+    def __init__(self, conn_id, **kwargs) -> None:
+        super().__init__(**kwargs)
         self._session = None
         self.method = "GET"
         self._conn_id = conn_id
 
     def _get_conn(self):
         if self._session is None:
-            
+
             schema = self.config.schema
             host = self.config.host
             port = self.config.port
@@ -36,7 +35,6 @@ class AnbimaHook(BaseHook):
         token : str
             access token
         """
-        # TODO : MAYBE WE CAN CHECK IF THE TOKEN HAS EXPIRED.
 
         payload = {"grant_type": "client_credentials"}
         headers = {
@@ -60,7 +58,6 @@ class AnbimaHook(BaseHook):
         headers: Union[dict, None] = None,
         extra_options: Union[dict, None] = None,
         request_params: Union[dict, None] = None,
-
     ) -> requests.Response:
         """_summary_
 
@@ -88,7 +85,7 @@ class AnbimaHook(BaseHook):
         token = self.get_token()
 
         client_id = config.login
-        
+
         headers = headers or {}
         headers.update(
             {
@@ -108,7 +105,9 @@ class AnbimaHook(BaseHook):
 
         url = self.url_from_endpoint(endpoint, base_url)
 
-        req = requests.Request(self.method, url, data=data, headers=headers, params=request_params)
+        req = requests.Request(
+            self.method, url, data=data, headers=headers, params=request_params
+        )
 
         prepped_request = session.prepare_request(req)
 
