@@ -41,7 +41,7 @@ class BaseAPIOperator(BaseOperator):
         log_response: bool = False,
         request_params: dict | None = None,
         endpoint: str,
-        json: dict| None = None,
+        json: dict | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -101,16 +101,19 @@ class BaseAPIOperator(BaseOperator):
 
 
 class BritechOperator(BaseAPIOperator):
-    def __init__(self, **kwargs) -> None:
+    conn_id = 'britech-api'
+
+    def __init__(self, *, britech_conn_id: str = "britech-api", **kwargs) -> None:
         super().__init__(**kwargs)
+        BritechOperator.conn_id= britech_conn_id
+
 
     @classmethod
     def _call_response(
         cls, endpoint, data, headers, request_params, extra_options
     ) -> Response:
 
-        hook = BritechHook(method="GET")
-
+        hook = BritechHook(method="GET", conn_id=BritechOperator.conn_id)
         response = hook.run(
             endpoint=endpoint,
             data=data,
@@ -126,15 +129,18 @@ class BritechOperator(BaseAPIOperator):
 
 
 class AnbimaOperator(BaseAPIOperator):
-    def __init__(self, **kwargs) -> None:
+    conn_id = 'anbima-api'
+
+    def __init__(self,* , anbima_conn_id : str = 'anbima-api', **kwargs) -> None:
         super().__init__(**kwargs)
+        AnbimaOperator.conn_id = anbima_conn_id
 
     @classmethod
     def _call_response(
         cls, endpoint, data, headers, request_params, extra_options
     ) -> Response:
 
-        hook = AnbimaHook()
+        hook = AnbimaHook(AnbimaOperator.conn_id)
 
         response = hook.run(
             endpoint=endpoint,
