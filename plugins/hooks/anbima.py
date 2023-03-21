@@ -9,7 +9,7 @@ from airflow.hooks.base import BaseHook
 # COMPLETE :  THE ANBIMA HOOK IS NOT SENDING THE PROPER HEADER.
 
 class AnbimaHook(BaseHook):
-    def __init__(self, conn_id="anbima_api"):  # , conn_id = 'anbima_api'
+    def __init__(self, conn_id="anbima-api"):  # , conn_id = 'anbima_api'
         super().__init__()
         self._session = None
         self.method = "GET"

@@ -8,7 +8,7 @@ from airflow.hooks.base import BaseHook
 
 
 class BritechHook(BaseHook):
-    def __init__(self, context=None, method="GET", conn_id="britech_api"):
+    def __init__(self, context=None, method="GET", conn_id="britech-api"):
         super().__init__(context)
         self._session = None
         self.method = method
