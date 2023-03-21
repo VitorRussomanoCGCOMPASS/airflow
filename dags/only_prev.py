@@ -11,6 +11,7 @@ from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
 from include.xcom_backend import HTMLXcom
+from operators.custom_sendgrid import SendGridOperator
 
 
 def splitdsformat(value) -> str:
@@ -85,6 +86,7 @@ def _merge_v2(
         ] = ""
     return data.to_json(orient="records")
 
+
 def _render_template_v2(
     html_template: str, indices_data: list[dict], complete_funds_data: list[dict]
 ) -> HTMLXcom:
@@ -125,12 +127,9 @@ def _check_for_none(input) -> bool:
     return False
 
 
-def _process_xcom(ids: list[list[str]]) -> tuple[int, ...]:
+def _process_xcom_2(ids: list[list[str]]) -> str:
     """
-    Formats a nested list of a unique string containing all ids separated by comma (That is acceptable for the BritechOperator)
-    into an actual list of integers.
-
-    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => [10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9]
+    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => '10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9'
 
     Parameters
     ----------
@@ -139,25 +138,24 @@ def _process_xcom(ids: list[list[str]]) -> tuple[int, ...]:
 
     Returns
     -------
-    tuple[int, ...]
-
+    str
+    
     """
-    from itertools import chain
-
-    return tuple(map(int, list(chain(*ids))[-1].split(",")))
-
+    return ids[-1][-1]
 
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
-    "conn_id": "mssql_default",
+    "conn_id": "mssql-default",
     "database": "DB_Brasil",
+    "sendgrid_conn_id": "sengrid-default",
     "mode": "reschedule",
     "timeout": 60 * 30,
     "max_active_runs": 1,
     "catchup": False,
     "do_xcom_push": True,
+    "render_template_as_native_obj": True,
 }
 
 with DAG(
@@ -240,9 +238,9 @@ with DAG(
             },
         )
 
-        process_xcom = PythonOperator(
-            task_id="process_xcom",
-            python_callable=_process_xcom,
+        process_xcom_2 = PythonOperator(
+            task_id="process_xcom_2",
+            python_callable=_process_xcom_2,
             do_xcom_push=True,
             op_kwargs={"ids": fetch_funds.output},
         )
@@ -251,11 +249,10 @@ with DAG(
             task_id="fetch_complementary_funds_data",
             sql=""" 
                 SELECT britech_id,  inception_date, apelido ,type 
-                FROM funds a 
-                WHERE britech_id = any(array{{params.ids}})
+                FROM funds WHERE britech_id in ({{params.ids}})
                 """,
             results_to_dict=True,
-            parameters={"ids": process_xcom.output},
+            parameters={"ids": process_xcom_2.output},
         )
 
         merge = PythonOperator(
@@ -295,19 +292,14 @@ with DAG(
         do_xcom_push=True,
     )
 
-    send_email = PythonOperator(
+    send_email = SendGridOperator(
         task_id="send_email",
-        python_callable=_send_email,
-        op_kwargs={
-            "to": "vitor.ibanez@cgcompass.com",
-            "cc": "middleofficebr@cgcompass.com",
-            "subject": "CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
-            "html_content": render_template.output,
-            "conn_id": "email_default",
-        },
+        to="vitor.ibanez@cgcompass.com",
+        cc="middleofficebr@cgcompass.com",
+        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
+        parameters={"html_content": render_template.output},
     )
 
     chain(is_business_day, indices)
     chain([indices, funds], render_template)
     chain(is_business_day, fetch_template, render_template, send_email)
-

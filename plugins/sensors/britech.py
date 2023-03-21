@@ -8,6 +8,7 @@ from itertools import chain
 
 # FIXME: CHECK IF FAILS SILENTLY ON 404
 
+
 class BritechIndicesSensor(BaseSensorOperator):
     template_fields = ("endpoint", "headers", "request_params")
 
@@ -18,6 +19,7 @@ class BritechIndicesSensor(BaseSensorOperator):
         extra_options: Union[dict, None] = None,
         request_params: Union[dict, None] = None,
         response_check: Union[Callable[..., bool], None] = None,
+        britech_conn_id: str = "britech-api",
         **kwargs,
     ) -> None:
 
@@ -28,6 +30,7 @@ class BritechIndicesSensor(BaseSensorOperator):
         self.extra_options = extra_options or {}
         self.response_check = response_check
         self.data = data
+        self.britech_conn_id = britech_conn_id
 
     def poke(self, context) -> bool:
         """
@@ -51,19 +54,17 @@ class BritechIndicesSensor(BaseSensorOperator):
             404 error
 
         """
-        hook = BritechHook()
+        hook = BritechHook(conn_id=self.britech_conn_id)
         self.log.info("Poking: %s", self.endpoint)
-        
+
         # TODO: IF ids in xcom format
         ids = self.request_params.get("idIndice")
 
         if isinstance(ids, list):
             ids = list(chain(*ids))[-1]
-        
+
         if ids is None:
-            raise Exception(
-                "Ids should not be None."
-            )
+            raise Exception("Ids should not be None.")
 
         ids = "".join(ids.split())
         if ids == ";":
@@ -71,7 +72,6 @@ class BritechIndicesSensor(BaseSensorOperator):
                 "The indices must be specified by a string of ids separated by comma."
             )
 
-        
         try:
             response = hook.run(
                 endpoint=self.endpoint,
@@ -92,12 +92,8 @@ class BritechIndicesSensor(BaseSensorOperator):
         except AirflowException as exc:
             if str(exc).startswith("404"):
                 raise exc
-                
 
         return True
-
-
-# FIXME : SHOULD IT BE A DYNAMIC TASK?
 
 
 class BritechFundsSensor(BaseSensorOperator):
@@ -120,6 +116,7 @@ class BritechFundsSensor(BaseSensorOperator):
         extra_options: Union[dict, None] = None,
         request_params: Union[dict, None] = None,
         response_check: Union[Callable[..., bool], None] = None,
+        britech_conn_id: str = "britech-api",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -129,6 +126,7 @@ class BritechFundsSensor(BaseSensorOperator):
         self.extra_options = extra_options or {}
         self.response_check = response_check
         self.data = data
+        self.britech_conn_id = britech_conn_id
 
     def poke(self, context):
         """
@@ -148,7 +146,7 @@ class BritechFundsSensor(BaseSensorOperator):
             404 error
         """
 
-        hook = BritechHook()
+        hook = BritechHook(conn_id=self.britech_conn_id)
         self.log.info("Poking: %s", self.endpoint)
 
         # TODO : GET IN THE DATABASE
@@ -229,6 +227,7 @@ class BritechEmptySensor(BaseSensorOperator):
         extra_options: Union[dict, None] = None,
         request_params: Union[dict, None] = None,
         response_check: Union[Callable[..., bool], None] = None,
+        britech_conn_id: str = "britech-api",
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -238,9 +237,10 @@ class BritechEmptySensor(BaseSensorOperator):
         self.extra_options = extra_options or {}
         self.response_check = response_check
         self.data = data
+        self.britech_conn_id = britech_conn_id
 
     def poke(self, context):
-        hook = BritechHook()
+        hook = BritechHook(conn_id=self.britech_conn_id)
         self.log.info("Poking: %s", self.endpoint)
 
         try:
@@ -261,6 +261,6 @@ class BritechEmptySensor(BaseSensorOperator):
 
         except AirflowException as exc:
             if str(exc).startswith("404"):
-                raise exc 
+                raise exc
 
         return True

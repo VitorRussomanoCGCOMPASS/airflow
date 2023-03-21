@@ -11,7 +11,6 @@ from airflow.exceptions import AirflowException
 # We can also return an specific backend from the postgres/mssql operator.
 # We can also add wrappers to file share operator for instance.
 
-# TODO :  We could def improve on this.
 class HTMLXcom:
     def __init__(self, html_string: str, **kwargs) -> None:
         self.html_string = html_string
@@ -86,7 +85,7 @@ class CustomXComBackendJSON(BaseXCom):
     @staticmethod
     def deserialize_value(result) -> str | Any:
         # retrieve the relevant reference string from the metadata database
-        hook = WasbHook(wasb_conn_id="wasb_default")
+        hook = WasbHook(wasb_conn_id="wasb-default")
         reference_string = BaseXCom.deserialize_value(result=result)
 
         blob_key = reference_string.replace(CustomXComBackendJSON.PREFIX, "")

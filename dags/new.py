@@ -10,7 +10,7 @@ from airflow.models.connection import Connection
 from airflow.hooks.base import BaseHook
 from airflow.providers.sendgrid.utils.emailer import send_email
 
-from operators.write_audit_publish import InsertSQLOperator
+from operators.write_audit_publish import TemporaryTableSQLOperator
 
 default_args = {
     "owner": "airflow",
@@ -35,10 +35,12 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/"],
     render_template_as_native_obj=True,
 ):
-    tes = InsertSQLOperator(
+
+    from flask_api.models.funds import Funds
+
+    tes = TemporaryTableSQLOperator(
         task_id='tess',
-        table="Employee_temp",
-        values={"EmployeeID": 12},
+        table= Funds,
         database="DB_Brasil",
         conn_id="mssql_default",
     )

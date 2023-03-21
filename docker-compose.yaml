@@ -66,7 +66,7 @@ x-airflow-common:
     AIRFLOW__SMTP__SMTP_PORT: 587
     AIRFLOW__SMTP__SMTP_MAIL_FROM: compass@info.cgcompass.com
     AIRFLOW__EMAIL__EMAIL_BACKEND: airflow.providers.sendgrid.utils.emailer.send_email
-    AIRFLOW__EMAIL__EMAIL_CONN_ID: sendgrid_default
+    AIRFLOW__EMAIL__EMAIL_CONN_ID: sendgrid-default
     SENDGRID_MAIL_FROM: compass@info.cgcompass.com
     AIRFLOW__CORE__XCOM_BACKEND : include.xcom_backend.CustomXComBackendJSON
 
