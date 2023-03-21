@@ -1,5 +1,4 @@
 from operators.alchemy import SQLAlchemyOperator
-from operators.britech import BritechOperator
 from pendulum import datetime
 from sensors.britech import BritechEmptySensor
 from sqlalchemy.orm import Session
@@ -16,7 +15,6 @@ from airflow.providers.common.sql.operators.sql import (
 from airflow.utils.trigger_rule import TriggerRule
 from include.utils.is_business_day import _is_business_day
 from airflow.operators.latest_only import LatestOnlyOperator
-from operators.extended_sql import SQLQueryToLocalOperator
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
 
 

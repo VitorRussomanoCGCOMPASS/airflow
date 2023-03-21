@@ -6,7 +6,7 @@ from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 import os
 from airflow.exceptions import AirflowException
-
+import pandas
 # We could also use ujson enconde_html_characters=True
 # We can also return an specific backend from the postgres/mssql operator.
 # We can also add wrappers to file share operator for instance.
@@ -37,6 +37,9 @@ class CustomXComBackendJSON(BaseXCom):
 
         hook = WasbHook(wasb_conn_id="wasb-default")
 
+        if isinstance(value, pandas.DataFrame):
+            filename = "data_" + str(uuid.uuid4()) + '.csv'
+            
         if isinstance(value, HTMLXcom):
             filename = "data_" + str(uuid.uuid4()) + ".html"
         else:
@@ -52,6 +55,8 @@ class CustomXComBackendJSON(BaseXCom):
         with NamedTemporaryFile(mode="w") as tmp:
             if isinstance(value, HTMLXcom):
                 tmp.write(value.html_string)
+            if isinstance(value , pandas.DataFrame):
+                value.to_csv(tmp)
             else:
                 json.dump(value, tmp)
 
@@ -90,9 +95,6 @@ class CustomXComBackendJSON(BaseXCom):
 
         blob_key = reference_string.replace(CustomXComBackendJSON.PREFIX, "")
 
-        print(reference_string)
-        print(blob_key)
-
         with NamedTemporaryFile() as temp:
 
             hook.get_file(
@@ -109,6 +111,8 @@ class CustomXComBackendJSON(BaseXCom):
             if reference_string.endswith(".html"):
                 HtmlFile = open(temp.name, "r", encoding="utf-8")
                 output = HtmlFile.read()
+            if reference_string.endswith('.csv'):
+                output = pandas.read_csv(temp.name)
             else:
                 output = json.load(temp)
                 if isinstance(output, str):

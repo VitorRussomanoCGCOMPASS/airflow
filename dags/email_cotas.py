@@ -42,7 +42,7 @@ def valueformat(value) -> str:
 
 def _merge_v2(
     funds_data: list[dict], complementary_data: list[dict], filter: bool = False
-) -> str:
+):
     """
     Merges funds_data and complementary_data (funds name, inception date and return since inception) together
     and optionally filters the returns of the fund that has less than 190 days since inception in conformity of regulation.
@@ -84,7 +84,7 @@ def _merge_v2(
                 "RentabilidadeInicio",
             ],
         ] = ""
-    return data.to_json(orient="records")
+    return data
 
 def _render_template_v2(
     html_template: str, indices_data: list[dict], complete_funds_data: list[dict]

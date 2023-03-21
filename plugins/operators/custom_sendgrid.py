@@ -72,7 +72,7 @@ class SendGridOperator(BaseOperator):
         super().__init__(**kwargs)
 
     def execute(self, context: Context) -> None:
-
+        self.log.info('Using connection %s', self.sendgrid_conn_id)
         mail = Mail(is_multiple=self.is_multiple)
 
         if "from_email" not in self.parameters:
