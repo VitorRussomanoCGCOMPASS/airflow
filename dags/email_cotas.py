@@ -221,7 +221,6 @@ with DAG(
         @task
         def process_xcom(ids):
             from itertools import chain
-
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         funds_sql_sensor = SqlSensor(
