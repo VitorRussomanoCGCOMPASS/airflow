@@ -22,8 +22,15 @@ default_args = {
 }
 
 
-def _print(**kwargs):
-    print("OKe")
+def _printa(**kwargs):
+    import pandas
+
+    return pandas.DataFrame.from_dict({"a": [1, 1], "b": [2, 2]})
+
+
+import pandas
+
+isinstance(_printa(), pandas.DataFrame)
 
 
 with DAG(
@@ -36,11 +43,15 @@ with DAG(
     render_template_as_native_obj=True,
 ):
 
-    from flask_api.models.funds import Funds
-
-    tes = TemporaryTableSQLOperator(
-        task_id='tess',
-        table= Funds,
-        database="DB_Brasil",
-        conn_id="mssql_default",
+    ok = SqlSensor(
+        task_id='fuck_mssql',
+        conn_id="mssql-default",
+        sql="""WITH WorkTable(id) as (select britech_id from funds WHERE britech_id  = any(array[3, 10, 17, 30, 32, 42, 49]))
+                SELECT ( SELECT COUNT(*)
+                FROM funds_values
+                WHERE "IdCarteira" IN ( SELECT id FROM WorkTable) 
+	            AND "Data" ='2023-03-22') =
+	   		    (SELECT COUNT(*) FROM WorkTable)
+                 (with parameters {'ids': [3, 10, 17, 30, 32, 42, 49]})""",
+    hook_params={"database": "DB_Brasil"},
     )

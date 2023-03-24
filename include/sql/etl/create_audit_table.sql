@@ -1,1 +1,0 @@
-SELECT * INTO {{params.table}} from {{params.table}} where 1=0

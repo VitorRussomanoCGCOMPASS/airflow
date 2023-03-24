@@ -13,6 +13,6 @@ FROM cotista_op a
 LEFT JOIN funds c
 ON a."IdCotista" = c.cotista_id
 JOIN funds_values  as d
-ON d.funds_id = a."IdCarteira"
+ON d.'IdCarteira' = a."IdCarteira"
 AND d.date = '{{ds}}'
 WHERE c.cotista_id is NULL

@@ -1,5 +1,6 @@
 from operators.baseapi import BritechOperator
-from operators.custom_wasb import PostgresOperator
+from operators.custom_sendgrid import SendGridOperator
+from operators.custom_wasb import MSSQLOperator
 from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
@@ -12,7 +13,8 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
-from include.xcom_backend import HTMLXcom
+from include.xcom_backend import HTMLXcom 
+
 
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
@@ -84,10 +86,13 @@ def _merge_v2(
                 "RentabilidadeInicio",
             ],
         ] = ""
-    return data
+    return data.to_json(orient="records")
+
 
 def _render_template_v2(
-    html_template: str, indices_data: list[dict], complete_funds_data: list[dict]
+    html_template: str,
+    indices_data: list[dict],
+    complete_funds_data: list[dict],
 ) -> HTMLXcom:
     """
     Renders the html template containing jinja formatting with the data.
@@ -110,7 +115,6 @@ def _render_template_v2(
     templateEnv.filters["valueformat"] = valueformat
 
     rtemplate = templateEnv.from_string(html_template)
-
     rendered_template = rtemplate.render(
         {
             "indices": indices_data,
@@ -148,11 +152,28 @@ def _process_xcom(ids: list[list[str]]) -> tuple[int, ...]:
     return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
 
+def _process_xcom_2(ids: list[list[str]]) -> str:
+    """
+    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => '10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9'
+
+    Parameters
+    ----------
+    ids : str
+        str formatted list of ids
+
+    Returns
+    -------
+    str
+    
+    """
+    return ids[-1][-1]
+
+
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
-    "conn_id": "postgres",
-    "database": "userdata",
+    "conn_id": "mssql-default",
+    "database": "DB_Brasil",
     "mode": "reschedule",
     "timeout": 60 * 30,
     "max_active_runs": 1,
@@ -165,7 +186,7 @@ with DAG(
     "email_cotas_pl_vfinal",
     schedule=None,
     default_args=default_args,
-    template_searchpath=["/opt/airflow/include/sql/"],
+    template_searchpath=["/opt/airflow/include/sql/mssql/"],
 ):
     is_business_day = ShortCircuitOperator(
         task_id="is_business_day",
@@ -177,10 +198,10 @@ with DAG(
         group_id="external-email-subset-funds"
     ) as external_email_subset_funds:
 
-        fetch_indices = SQLExecuteQueryOperator(
+        fetch_indices = MSSQLOperator(
             task_id="fetch_indices",
-            sql="devops_id_text.sql",
-            params={
+            sql="devops_id_str.sql",
+            parameters={
                 "dag": "email_cotas_pl",
                 "task_group": "external-email-subset-funds",
                 "type": "indexes",
@@ -194,10 +215,10 @@ with DAG(
             do_xcom_push=False,
         )
 
-        fetch_funds = SQLExecuteQueryOperator(
+        fetch_funds = MSSQLOperator(
             task_id="fetch_funds",
-            sql="devops_id_text.sql",
-            params={
+            sql="devops_id_str.sql",
+            parameters={
                 "dag": "email_cotas_pl",
                 "task_group": "external-email-subset-funds",
                 "type": "funds",
@@ -221,9 +242,9 @@ with DAG(
             do_xcom_push=False,
         )
 
-        process_xcom = PythonOperator(
-            task_id="process_xcom",
-            python_callable=_process_xcom,
+        process_xcom_2 = PythonOperator(
+            task_id="process_xcom_2",
+            python_callable=_process_xcom_2,
             do_xcom_push=True,
             op_kwargs={"ids": fetch_funds.output},
         )
@@ -231,16 +252,16 @@ with DAG(
         funds_sql_sensor = SqlSensor(
             task_id="funds_sql_sensor",
             sql=""" 
-                WITH WorkTable(id) as (select britech_id from funds WHERE britech_id  = any(array{{params.ids}}))
+                WITH WorkTable(id) as (select britech_id from funds WHERE britech_id  in ({{params.ids}}))
                 SELECT ( SELECT COUNT(*)
                 FROM funds_values
-                WHERE funds_id IN ( SELECT id FROM WorkTable) 
-	            AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') =
+                WHERE "IdCarteira" IN ( SELECT id FROM WorkTable) 
+	            AND "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') =
 	   		    (SELECT COUNT(*) FROM WorkTable)
                 """,
-            hook_params={"database": "userdata"},
+            hook_params={"database": "DB_Brasil"},
             do_xcom_push=False,
-            parameters={"ids": process_xcom.output},
+            params={"ids": process_xcom_2.output},
         )
 
         fetch_indices_return = BritechOperator(
@@ -261,21 +282,19 @@ with DAG(
             },
         )
 
-        fetch_complementary_funds_data = PostgresOperator(
+        fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
-            conn_id="postgres",
-            database="userdata",
             sql=""" 
-            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date , type 
+            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , "Data" , type 
             FROM funds a 
             JOIN funds_values c 
-            ON a.britech_id = c.funds_id 
-            WHERE britech_id = any(array{{params.ids}})
-            AND date = inception_date 
-            OR  date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id = any(array{{params.ids}})
+            ON a.britech_id = c."IdCarteira"
+            WHERE britech_id in ({{params.ids}})
+            AND "Data" = inception_date 
+            OR  "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
+            AND britech_id in ({{params.ids}})
             )  
-            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
+            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY "Data") AS inception_cota
             FROM Worktable)
             SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
             COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio"
@@ -283,7 +302,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
-            parameters={"ids": process_xcom.output},
+            parameters={"ids": process_xcom_2.output},
         )
 
         merge_and_filter = PythonOperator(
@@ -298,10 +317,11 @@ with DAG(
 
         fetch_template = FileShareOperator(
             task_id="fetch_template",
-            conn_id="azure_fileshare_default",
+            azure_fileshare_conn_id="azure-fileshare-default",
             share_name="utils",
             directory_name="Templates",
             file_name="cotas_pl_template.html",
+            do_xcom_push=True,
         )
 
         render_template = PythonOperator(
@@ -337,7 +357,7 @@ with DAG(
         chain(
             fetch_funds,
             check_for_funds,
-            process_xcom,
+            process_xcom_2,
             funds_sql_sensor,
             [fetch_funds_return, fetch_complementary_funds_data],
             merge_and_filter,
@@ -351,8 +371,8 @@ with DAG(
 
         complete_funds_sql_sensor = SqlSensor(
             task_id="complete_funds_sql_sensor",
-            sql="SELECT ( SELECT COUNT(*) FROM funds_values WHERE funds_id IN ( SELECT britech_id FROM funds WHERE status='ativo') AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM funds WHERE status='ativo')",
-            hook_params={"database": "userdata"},
+            sql="""SELECT ( SELECT COUNT(*) FROM funds_values WHERE "IdCarteira" IN ( SELECT britech_id FROM funds WHERE status='ativo') AND "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM funds WHERE status='ativo')""",
+            hook_params={"database": "DB_Brasil"},
             do_xcom_push=False,
         )  # type: ignore
 
@@ -361,9 +381,9 @@ with DAG(
             sql="SELECT string_agg(britech_id::text,',') as britech_id from funds where status='ativo' ",
         )
 
-        process_xcom = PythonOperator(
-            task_id="process_xcom",
-            python_callable=_process_xcom,
+        process_xcom_2 = PythonOperator(
+            task_id="process_xcom_2",
+            python_callable=_process_xcom_2,
             do_xcom_push=True,
             op_kwargs={"ids": complete_fetch_funds.output},
         )
@@ -376,21 +396,19 @@ with DAG(
                 "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
-        fetch_complementary_funds_data = PostgresOperator(
+        fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
-            conn_id="postgres",
-            database="userdata",
             sql=""" 
-            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date , type 
+            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , "Data" , type 
             FROM funds a 
             JOIN funds_values c 
-            ON a.britech_id = c.funds_id 
-            WHERE britech_id = any(array{{params.ids}})
-            AND date = inception_date 
-            OR date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id = any(array{{params.ids}})
+            ON a.britech_id = c.IdCarteira 
+            WHERE britech_id in ({{params.ids}})
+            AND "Data" = inception_date 
+            OR "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
+            AND britech_id in ({{params.ids}})
             )  
-            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
+            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY "Data") AS inception_cota
             FROM Worktable)
             SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
             COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio"
@@ -398,7 +416,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
-            parameters={"ids": process_xcom.output},
+            parameters={"ids": process_xcom_2.output},
         )
 
         merge = PythonOperator(
@@ -413,7 +431,7 @@ with DAG(
 
         fetch_template = FileShareOperator(
             task_id="fetch_template",
-            conn_id="azure_fileshare_default",
+            azure_fileshare_conn_id="azure-fileshare-default",
             share_name="utils",
             directory_name="Templates",
             file_name="internal_cotas_template.html",
@@ -455,12 +473,11 @@ with DAG(
 
     chain(funds_sql_sensor, all_funds)
 
-
 with DAG(
     "email_prev_cotas_pl",
     schedule=None,
     default_args=default_args,
-    template_searchpath=["/opt/airflow/include/sql/"],
+    template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
     is_business_day = ShortCircuitOperator(
         task_id="is_business_day",
@@ -470,10 +487,10 @@ with DAG(
 
     with TaskGroup(group_id="indices") as indices:
 
-        fetch_indices = PostgresOperator(
+        fetch_indices = MSSQLOperator(
             task_id="fetch_indices",
-            sql="devops_id_text.sql",
-            params={
+            sql="devops_id_str.sql",
+            parameters={
                 "dag": "prev_email_cotas_pl",
                 "task_group": "prev_email_cotas_pl",
                 "type": "indexes",
@@ -510,10 +527,10 @@ with DAG(
 
     with TaskGroup(group_id="funds") as funds:
 
-        fetch_funds = PostgresOperator(
+        fetch_funds = MSSQLOperator(
             task_id="fetch_funds",
-            sql="devops_id_text.sql",
-            params={
+            sql="devops_id_str.sql",
+            parameters={
                 "dag": "prev_email_cotas_pl",
                 "task_group": "prev_email_cotas_pl",
                 "type": "funds",
@@ -536,24 +553,21 @@ with DAG(
             },
         )
 
-        process_xcom = PythonOperator(
-            task_id="process_xcom",
-            python_callable=_process_xcom,
+        process_xcom_2 = PythonOperator(
+            task_id="process_xcom_2",
+            python_callable=_process_xcom_2,
             do_xcom_push=True,
             op_kwargs={"ids": fetch_funds.output},
         )
 
-        fetch_complementary_funds_data = PostgresOperator(
+        fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
-            conn_id="postgres",
-            database="userdata",
             sql=""" 
-                SELECT britech_id, to_char(inception_date,'YYYY-MM-DD') inception_date, apelido ,type 
-                FROM funds a 
-                WHERE britech_id = any(array{{params.ids}})
+                SELECT britech_id,  inception_date, apelido ,type 
+                FROM funds WHERE britech_id in ({{params.ids}})
                 """,
             results_to_dict=True,
-            parameters={"ids": process_xcom.output},
+            parameters={"ids": process_xcom_2.output},
         )
 
         merge = PythonOperator(
@@ -577,7 +591,6 @@ with DAG(
     fetch_template = FileShareOperator(
         task_id="fetch_template",
         share_name="utils",
-        conn_id="azure_fileshare_default",
         directory_name="Templates",
         file_name="prev_internal_cotas_template.html",
         do_xcom_push=True,
@@ -594,16 +607,12 @@ with DAG(
         do_xcom_push=True,
     )
 
-    send_email = PythonOperator(
+    send_email = SendGridOperator(
         task_id="send_email",
-        python_callable=_send_email,
-        op_kwargs={
-            "to": "vitor.ibanez@cgcompass.com",
-            "cc": "middleofficebr@cgcompass.com",
-            "subject": "CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
-            "html_content": render_template.output,
-            "conn_id": "email_default",
-        },
+        to="vitor.ibanez@cgcompass.com",
+        cc="middleofficebr@cgcompass.com",
+        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
+        parameters={"html_content": render_template.output},
     )
 
     chain(is_business_day, indices)

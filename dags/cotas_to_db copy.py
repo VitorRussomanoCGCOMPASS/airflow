@@ -1,16 +1,16 @@
-from operators.britech import BritechOperator
+from operators.alchemy import SQLAlchemyOperatorLocal
+from operators.baseapi import BritechOperator
 from pendulum import datetime
-
 
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models.baseoperator import chain
+from airflow.operators.empty import EmptyOperator
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
-from airflow.operators.empty import EmptyOperator
-from operators.alchemy import SQLAlchemyOperatorLocal
 from airflow.utils.task_group import TaskGroup
-from airflow.operators.empty import EmptyOperator
-
+from operators.write_audit_publish import InsertSQLOperator
+from operators.custom_wasb import MSSQLOperator
+from flask_api.models.funds import FundsValues
 
 default_args = {
     "owner": "airflow",
@@ -32,9 +32,9 @@ def _push_cotista_op(file_path: str, session, filename, **kwargs) -> None:
     import os
 
     from flask_api.models.funds import FundsValues
-    from include.schemas.funds_values import FundsValuesSchemas
-
     from sqlalchemy.dialects.postgresql import insert as pgs_upsert
+
+    from include.schemas.funds_values import FundsValuesSchemas
 
     path = os.path.join(file_path, filename)
 
@@ -62,10 +62,9 @@ with DAG(
 
     with TaskGroup(group_id="funds_processing") as funds_processing:
 
-        fetch_sql_funds = SQLExecuteQueryOperator(
+        fetch_sql_funds = MSSQLOperator(
             task_id="fetch_sql_funds",
-            conn_id="postgres",
-            database="userdata",
+            database="DB_Brasil",
             sql="SELECT britech_id from funds where status='ativo' ",
             do_xcom_push=True,
         )
@@ -77,6 +76,7 @@ with DAG(
             ids = context["task_instance"].xcom_pull(
                 task_ids="funds_processing.fetch_sql_funds"
             )
+
             ds = context["task"].render_template(
                 "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
                 context,
@@ -90,7 +90,6 @@ with DAG(
                             "dataInicio": ds,
                             "dataFim": ds,
                         },
-                        "filename": "fund_id" + str(id[-1]) + "_" + ds + ".json",
                     },
                     chain(ids),
                 )
@@ -100,25 +99,20 @@ with DAG(
 
         fetch_funds_data = BritechOperator.partial(
             task_id="fetch_funds_data",
-            output_path="/opt/airflow/data/britech/cotas",
             endpoint="Fundo/BuscaHistoricoCotaDia",
-            do_xcom_push=False,
+            do_xcom_push=True,
         ).expand_kwargs(copied_kwargs)
 
-        push_funds_data = SQLAlchemyOperatorLocal.partial(
-            conn_id="postgres",
-            database="userdata",
-            task_id="push_cotista_op",
-            python_callable=_push_cotista_op,
-            file_path="/opt/airflow/data/britech/cotas",
-            do_xcom_push=False,
-        ).expand(op_kwargs=copied_kwargs)
+        push_data = InsertSQLOperator.partial(
+            task_id="push_data",
+            database="DB_Brasil",
+            table="funds_values",
+            conn_id="mssql-default",
+        ).expand(values=fetch_funds_data.output)
 
-        opening_new_day = EmptyOperator(task_id="opening_new_day")
         chain(
             fetch_sql_funds,
             copied_kwargs,
             fetch_funds_data,
-            push_funds_data,
-            opening_new_day,
+            push_data,
         )

@@ -146,7 +146,7 @@ class InsertSQLOperator(BaseSQLOperator):
             self.table = Table(self.table, metadata, autoload_with=engine)
 
         with engine.connect() as conn:
-            conn.execute(insert(self.table), [self.values])
+            conn.execute(insert(self.table), self.values)
 
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 

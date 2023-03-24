@@ -67,6 +67,7 @@ def _merge_v2(
         left_on="IdCarteira",
         right_on="britech_id",
     )
+    print(data)
 
     if filter:
         data["diff_days"] = (
@@ -84,12 +85,11 @@ def _merge_v2(
                 "RentabilidadeInicio",
             ],
         ] = ""
-    return data.to_json(orient="records")
+    return data.to_json(orient= 'records')
 
 
 def _render_template_v2(
-    html_template: str, indices_data: list[dict], complete_funds_data: list[dict]
-) -> HTMLXcom:
+    html_template: str, indices_data: list[dict], complete_funds_data: list[dict])  -> HTMLXcom:
     """
     Renders the html template containing jinja formatting with the data.
 
@@ -102,6 +102,8 @@ def _render_template_v2(
     """
 
     from jinja2 import BaseLoader, Environment
+
+    print(complete_funds_data)
 
     templateEnv = Environment(loader=BaseLoader())
 

@@ -1,6 +1,6 @@
 SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date , type from funds a 
  JOIN funds_values c 
- ON a.britech_id = c.funds_id 
+ ON a.britech_id = c.'IdCarteira' 
  WHERE britech_id in ({{params.ids}})
  AND date = inception_date 
  OR date = '{{macros.anbima_plugin.forward(ds,-1)}}'

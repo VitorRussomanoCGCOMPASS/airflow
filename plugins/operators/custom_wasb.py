@@ -170,7 +170,7 @@ class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
 
 class MSSQLOperator(CustomBaseSQLOperator):
     def __init__(
-        self, *, conn_id="mssql_default", database: str | None = None, **kwargs
+        self, *, conn_id="mssql-default", database: str | None = None, **kwargs
     ) -> None:
 
         if database is not None:
@@ -206,27 +206,35 @@ class MSSQLOperator(CustomBaseSQLOperator):
 
         for row in results:
             output.append(tuple(row))
-
         return output
 
+    #FIXME : PLS
     @classmethod
     def _results_to_dict(
         cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
 
+        dict_results = []
+        print(results)
+
         if isinstance(descriptions, list):
+            print(descriptions)
             if descriptions[-1] is not None:
                 column_names = [
-                    column[0][0] if column is not None else None for column in descriptions
+                    column[0] if column is not None else None for column in descriptions[-1]
                 ]
-                results = [dict(zip(column_names, results[-1]))]
+                for row in results:
+                    print(row)
+                    print(column_names)
+                    dict_results.append(dict(zip(column_names, row)))
 
-        return results
+        return dict_results
+
 
 
 class PostgresOperator(CustomBaseSQLOperator):
     def __init__(
-        self, *, conn_id="postgres_default", database: str | None = None, **kwargs
+        self, *, conn_id="postgres-default", database: str | None = None, **kwargs
     ) -> None:
         super().__init__(database=database, **kwargs, conn_id=conn_id)
 
@@ -288,3 +296,4 @@ class PostgresOperator(CustomBaseSQLOperator):
                 results = [dict(zip(column_names, i)) for i in results]
 
         return results
+

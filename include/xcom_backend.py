@@ -36,32 +36,24 @@ class CustomXComBackendJSON(BaseXCom):
     ):
 
         hook = WasbHook(wasb_conn_id="wasb-default")
-
-        if isinstance(value, pandas.DataFrame):
-            filename = "data_" + str(uuid.uuid4()) + '.csv'
+        
             
-        if isinstance(value, HTMLXcom):
-            filename = "data_" + str(uuid.uuid4()) + ".html"
-        else:
-            # the connection to Wasb is created by using the WasbHook with
-            # the conn id configured in Step 3
-            # make sure the file_id is unique, either by using combinations of
-            # the task_id, run_id and map_index parameters or by using a uuid
-            filename = "data_" + str(uuid.uuid4()) + ".json"
-            # define the full blob key where the file should be stored
-
-        blob_key = f"{run_id}/{task_id}/{filename}"
-
         with NamedTemporaryFile(mode="w") as tmp:
+
             if isinstance(value, HTMLXcom):
                 tmp.write(value.html_string)
-            if isinstance(value , pandas.DataFrame):
+                filename = "data_" + str(uuid.uuid4()) + ".html"
+
+            elif isinstance(value , pandas.DataFrame):
                 value.to_csv(tmp)
+                filename = "data_" + str(uuid.uuid4()) + '.csv'
+
             else:
                 json.dump(value, tmp)
+                filename = "data_" + str(uuid.uuid4()) + ".json"
 
+            # write the value to a local temporary file
             tmp.flush()
-            # write the value to a local temporary JSON file
 
             file_size = os.stat(tmp.name).st_size
 
@@ -71,8 +63,10 @@ class CustomXComBackendJSON(BaseXCom):
                     CustomXComBackendJSON.MAX_FILE_SIZE_BYTES,
                     file_size,
                 )
+            
+            blob_key = f"{run_id}/{task_id}/{filename}"
 
-            # load the local JSON file into Azure Blob Storage
+            # load the local  file into Azure Blob Storage
             hook.load_file(
                 file_path=tmp.name,
                 container_name=CustomXComBackendJSON.CONTAINER_NAME,
@@ -111,8 +105,9 @@ class CustomXComBackendJSON(BaseXCom):
             if reference_string.endswith(".html"):
                 HtmlFile = open(temp.name, "r", encoding="utf-8")
                 output = HtmlFile.read()
-            if reference_string.endswith('.csv'):
+            elif reference_string.endswith('.csv'):
                 output = pandas.read_csv(temp.name)
+                output = output.to_json(orient='records')
             else:
                 output = json.load(temp)
                 if isinstance(output, str):
