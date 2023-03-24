@@ -127,7 +127,6 @@ def _render_template(
     try:
         with open(indices_path, "r") as _file:
             indices = json.load(_file)
-
         with open(funds_path, "r") as _file:
             funds = json.load(_file)
 

@@ -1,7 +1,7 @@
 FROM apache/airflow:2.5.0-python3.10
 USER root
 
-RUN apt-get update
+RUN apt-get update  
 RUN apt-get -y install git
 
 COPY requirements.txt /requirements.txt
