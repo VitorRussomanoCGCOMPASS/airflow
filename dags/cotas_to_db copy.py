@@ -1,5 +1,5 @@
 from operators.alchemy import SQLAlchemyOperatorLocal
-from operators.baseapi import BritechOperator
+from operators.api import BritechOperator
 from pendulum import datetime
 
 from airflow import DAG
@@ -9,48 +9,13 @@ from airflow.operators.empty import EmptyOperator
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.utils.task_group import TaskGroup
 from operators.write_audit_publish import InsertSQLOperator
-from operators.custom_wasb import MSSQLOperator
+from operators.custom_sql import MSSQLOperator
 from flask_api.models.funds import FundsValues
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
 }
-
-
-def _push_cotista_op(file_path: str, session, filename, **kwargs) -> None:
-    """
-    Reads json data from file specified by file_path and insert but do not update to CotistaOp table
-
-    Parameters
-    ----------
-    file_path : str
-    session : Session
-    """
-    import json
-    import logging
-    import os
-
-    from flask_api.models.funds import FundsValues
-    from sqlalchemy.dialects.postgresql import insert as pgs_upsert
-
-    from include.schemas.funds_values import FundsValuesSchemas
-
-    path = os.path.join(file_path, filename)
-
-    with open(path, "r") as _file:
-        logging.info("Getting file.")
-        data = json.load(_file)
-
-    data = FundsValuesSchemas(session=session).load(data, many=True)
-
-    stmt = pgs_upsert(FundsValues).values(data)
-    stmt = stmt.on_conflict_do_nothing(
-        index_elements=["date", "funds_id"],
-    )
-
-    session.execute(stmt)
-
 
 with DAG(
     "cotas_to_db_copy",

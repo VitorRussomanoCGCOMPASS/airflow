@@ -203,29 +203,24 @@ class MSSQLOperator(CustomBaseSQLOperator):
     ) -> list[Any]:
         """Processes results from SQL along with descriptions"""
         output = []
-
+        
         for row in results:
             output.append(tuple(row))
         return output
 
-    #FIXME : PLS
     @classmethod
     def _results_to_dict(
         cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
 
         dict_results = []
-        print(results)
 
         if isinstance(descriptions, list):
-            print(descriptions)
             if descriptions[-1] is not None:
                 column_names = [
                     column[0] if column is not None else None for column in descriptions[-1]
                 ]
                 for row in results:
-                    print(row)
-                    print(column_names)
                     dict_results.append(dict(zip(column_names, row)))
 
         return dict_results
@@ -288,7 +283,6 @@ class PostgresOperator(CustomBaseSQLOperator):
     def _results_to_dict(
         cls, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
-
 
         if isinstance(descriptions, list):
             if descriptions[-1] is not None:
