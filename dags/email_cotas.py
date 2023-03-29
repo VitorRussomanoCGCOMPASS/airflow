@@ -9,11 +9,11 @@ from sensors.sql import SqlSensor
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
-from include.xcom_backend import HTMLXcom 
+from include.xcom_backend import HTMLXcom
+from airflow.decorators import task
 
 
 def splitdsformat(value) -> str:
@@ -130,28 +130,6 @@ def _check_for_none(input) -> bool:
     return False
 
 
-def _process_xcom(ids: list[list[str]]) -> tuple[int, ...]:
-    """
-    Formats a nested list of a unique string containing all ids separated by comma (That is acceptable for the BritechOperator)
-    into an actual list of integers.
-
-    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => [10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9]
-
-    Parameters
-    ----------
-    ids : str
-        str formatted list of ids
-
-    Returns
-    -------
-    tuple[int, ...]
-
-    """
-    from itertools import chain
-
-    return tuple(map(int, list(chain(*ids))[-1].split(",")))
-
-
 def _process_xcom_2(ids: list[list[str]]) -> str:
     """
     e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => '10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9'
@@ -164,7 +142,7 @@ def _process_xcom_2(ids: list[list[str]]) -> str:
     Returns
     -------
     str
-    
+
     """
     return ids[-1][-1]
 
@@ -365,22 +343,24 @@ with DAG(
 
         complete_funds_sql_sensor = SqlSensor(
             task_id="complete_funds_sql_sensor",
-            sql="""SELECT ( SELECT COUNT(*) FROM funds_values WHERE "IdCarteira" IN ( SELECT britech_id FROM funds WHERE status='ativo') AND "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM funds WHERE status='ativo')""",
+            sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(ds)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
             hook_params={"database": "DB_Brasil"},
             do_xcom_push=False,
         )  # type: ignore
 
-        complete_fetch_funds = SQLExecuteQueryOperator(
+        # FIXME : THIS WILL NO LONGER RETURN A STRING.
+        complete_fetch_funds = MSSQLOperator(
             task_id="complete_fetch_funds",
-            sql="SELECT string_agg(britech_id::text,',') as britech_id from funds where status='ativo' ",
+            sql="declare @date date set @date = '{{macros.template_tz.convert_ts(ds)}}' EXEC dbo.SP_ACTIVE_FUNDS @date",
         )
 
-        process_xcom_2 = PythonOperator(
-            task_id="process_xcom_2",
-            python_callable=_process_xcom_2,
-            do_xcom_push=True,
-            op_kwargs={"ids": complete_fetch_funds.output},
-        )
+        @task 
+        def process_xcom(values):
+            from itertools import chain
+            return tuple(chain(*values))
+
+        processed_xcom = process_xcom(complete_fetch_funds.output)
+        
 
         fetch_funds_return = BritechOperator(
             task_id="fetch_funds_return",
@@ -397,10 +377,10 @@ with DAG(
             FROM funds a 
             JOIN funds_values c 
             ON a.britech_id = c.IdCarteira 
-            WHERE britech_id in ({{params.ids}})
+            WHERE britech_id in {{params.ids}}
             AND "Data" = inception_date 
             OR "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id in ({{params.ids}})
+            AND britech_id in {{params.ids}}
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY "Data") AS inception_cota
             FROM Worktable)
@@ -410,7 +390,7 @@ with DAG(
             WHERE "RentabilidadeInicio" !=0
             """,
             results_to_dict=True,
-            parameters={"ids": process_xcom_2.output},
+            parameters={"ids": processed_xcom},
         )
 
         merge = PythonOperator(
