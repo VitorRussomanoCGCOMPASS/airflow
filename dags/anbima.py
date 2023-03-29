@@ -3,7 +3,7 @@ from typing import Any, Type
 
 from marshmallow_sqlalchemy import SQLAlchemySchema
 from operators.alchemy import SQLAlchemyOperator
-from operators.anbima import AnbimaOperator
+from operators.api import AnbimaOperator
 from pendulum import datetime
 from sensors.anbima import AnbimaSensor
 from sqlalchemy.orm import Session

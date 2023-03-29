@@ -71,7 +71,7 @@ with DAG(
         push_data = InsertSQLOperator.partial(
             task_id="push_data",
             database="DB_Brasil",
-            table="funds_values",
+            table=FundsValues,
             conn_id="mssql-default",
         ).expand(values=fetch_funds_data.output)
 

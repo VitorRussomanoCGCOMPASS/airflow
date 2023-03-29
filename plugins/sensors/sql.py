@@ -53,7 +53,7 @@ class SqlSensor(BaseSensorOperator):
     ):
         self.conn_id = conn_id
         self.sql = sql
-        self.parameters = parameters
+        self.parameters = parameters or {}
         self.success = success
         self.failure = failure
         self.fail_on_empty = fail_on_empty
@@ -78,7 +78,8 @@ class SqlSensor(BaseSensorOperator):
         hook = self._get_hook()
 
         self.log.info("Poking: %s (with parameters %s)", self.sql, self.parameters)
-        records = hook.get_records(self.sql, self.parameters)
+        records = hook.get_records(self.sql)
+
         if not records:
             if self.fail_on_empty:
                 raise AirflowException(
@@ -86,7 +87,9 @@ class SqlSensor(BaseSensorOperator):
                 )
             else:
                 return False
+        
         first_cell = records[0][0]
+
         if self.failure is not None:
             if callable(self.failure):
                 if self.failure(first_cell):

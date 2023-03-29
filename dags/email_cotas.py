@@ -252,16 +252,10 @@ with DAG(
         funds_sql_sensor = SqlSensor(
             task_id="funds_sql_sensor",
             sql=""" 
-                WITH WorkTable(id) as (select britech_id from funds WHERE britech_id  in ({{params.ids}}))
-                SELECT ( SELECT COUNT(*)
-                FROM funds_values
-                WHERE "IdCarteira" IN ( SELECT id FROM WorkTable) 
-	            AND "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') =
-	   		    (SELECT COUNT(*) FROM WorkTable)
-                """,
+            WITH WorkTable(id) as ( SELECT britech_id FROM funds WHERE britech_id IN ({{params.ids}})) SELECT case when (SELECT COUNT(*) FROM funds_values WHERE "IdCarteira" IN (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
             hook_params={"database": "DB_Brasil"},
             do_xcom_push=False,
-            params={"ids": process_xcom_2.output},
+            parameters={"ids": process_xcom_2.output},
         )
 
         fetch_indices_return = BritechOperator(

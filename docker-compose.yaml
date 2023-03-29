@@ -82,7 +82,6 @@ x-airflow-common:
     - ./plugins:/opt/airflow/plugins
     - ./data:/opt/airflow/data
     - ./include:/opt/airflow/include
-    - ./great_expectations:/opt/airflow/great_expectations
 
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:

@@ -16,7 +16,7 @@ from airflow.utils.trigger_rule import TriggerRule
 from include.utils.is_business_day import _is_business_day
 from airflow.operators.latest_only import LatestOnlyOperator
 from airflow.providers.common.sql.operators.sql import SQLCheckOperator
-
+from operators.api import BritechOperator
 
 
 default_args = {
@@ -41,7 +41,6 @@ def _push_cotista_op(file_path: str, session: Session) -> None:
     import json
     import logging
 
-    # FIXME : COTISTA OP
     from flask_api.models.cotista_op import CotistaOP
     from sqlalchemy.dialects.postgresql import insert as pgs_upsert
     with open(file_path, "r") as _file:

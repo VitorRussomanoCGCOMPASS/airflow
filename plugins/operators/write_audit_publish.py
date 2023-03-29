@@ -9,7 +9,6 @@ from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
 
-# WE NEED TO OPT BETWEEN TEMPORARY TABLES AND NON TEMPORARY TABLES
 class TemporaryTableSQLOperator(BaseSQLOperator):
 
     template_fields: Sequence[str] = ()
@@ -162,6 +161,10 @@ def on_conflict_do_update():
 from typing import Literal
 
 
+
+# A ideia é suport que vamos ter dois modelos sqlalchemy
+# Porém, se nós criarmos run-time, isso vai significar que nao vai ter os mesmos 
+
 class MergeSQLOperator(BaseSQLOperator):
     def __init__(
         self,
@@ -176,8 +179,8 @@ class MergeSQLOperator(BaseSQLOperator):
         self.target_table = target_table
 
     @classmethod
-    def generate_merge_sql(cls, target_table: Table, source_table: str):
-        pass
+    def generate_merge_sql(cls, target_table: Table, source_table: str) -> str:
+        return ""
 
     def execute(self, context: Context):
 
@@ -197,3 +200,6 @@ class MergeSQLOperator(BaseSQLOperator):
         if not self.source_table:
             self.source_table = self.target_table.name + "_temp"
         # Now we have source_table as string and target_table as TABLE.
+        sql = self.generate_merge_sql(self.target_table, self.source_table)
+        hook.run(sql)
+    
