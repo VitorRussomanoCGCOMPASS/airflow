@@ -7,6 +7,7 @@ from sqlalchemy.orm.decl_api import DeclarativeMeta
 
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
+from airflow.models.xcom_arg import XComArg
 
 
 class TemporaryTableSQLOperator(BaseSQLOperator):
@@ -111,17 +112,24 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
 
 
 class InsertSQLOperator(BaseSQLOperator):
+    
+
+    template_fields: Sequence[str] = ("values")
+    template_ext: Sequence[str] = (".json")
+    template_fields_renderers = {"values": "json"}
+
+
     def __init__(
         self,
         *,
         conn_id: str | None = None,
         database: str,
         table: str | DeclarativeMeta,
-        values: dict[str, Any],
+        values: dict[str, Any] | XComArg,
         **kwargs,
     ) -> None:
         self.table = table
-        self.values = values
+        self.values = values or {}
 
         hook_params = kwargs.pop("hook_params", {})
         kwargs["hook_params"] = {"database": database, **hook_params}
@@ -135,6 +143,7 @@ class InsertSQLOperator(BaseSQLOperator):
         hook = self.get_db_hook()
         engine = hook.get_sqlalchemy_engine()
 
+
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
             self.table = getattr(self.table, "__table__")
@@ -145,7 +154,7 @@ class InsertSQLOperator(BaseSQLOperator):
             self.table = Table(self.table, metadata, autoload_with=engine)
 
         with engine.connect() as conn:
-            conn.execute(insert(self.table), self.values)
+            conn.execute(self.table.insert().values(self.values))
 
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
