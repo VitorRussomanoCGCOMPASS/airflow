@@ -165,6 +165,27 @@ UPDATE SET ....
 
 
 class MergeSQLOperator(BaseSQLOperator):
+    """
+    Operator that performs a SQL merge operation on two tables.
+
+    :param conn_id: The connection ID to use for the operator.
+    :type conn_id: str or None
+    :param database: The name of the database to use.
+    :type database: str
+    :param source_table: The source table to merge.
+    :type source_table: sqlalchemy.ext.declarative.api.DeclarativeMeta or sqlalchemy.schema.Table
+    :param target_table: The target table to merge into.
+    :type target_table: sqlalchemy.ext.declarative.api.DeclarativeMeta or sqlalchemy.schema.Table
+    :param index_elements: The index elements to use for the merge operation.
+    :type index_elements: list[sqlalchemy.schema.Column] or sqlalchemy.schema.Column or None
+    :param index_where: The where clause to use for the index.
+    :type index_where: None
+    :param set_: The columns to update in the target table. If None, only inserts will be performed.
+    :type set_: Iterable[sqlalchemy.schema.Column] or Iterable[str] or None
+    :param holdlock: Whether to hold a lock during the merge operation.
+    :type holdlock: bool
+    """
+
     def __init__(
         self,
         *,
@@ -193,11 +214,24 @@ class MergeSQLOperator(BaseSQLOperator):
         self.set_ = set_
 
     @classmethod
-    def generate_on_clause(cls, primary_key: list) -> str:
-        stmt = f"target.{primary_key[0]} = source.{primary_key[0]}"
+    def generate_on_clause(cls, primary_keys: list) -> str:
+        """
+        Generate the ON clause for the MERGE statement using the primary key of the target table.
 
-        if len(primary_key) > 1:
-            for pk in primary_key[1:]:
+        Parameters
+        ----------
+        primary_key : list
+            List of primary key columns.
+
+        Returns
+        -------
+        str
+            The ON clause for the MERGE statement.
+        """
+        stmt = f"target.{primary_keys[0]} = source.{primary_keys[0]}"
+
+        if len(primary_keys) > 1:
+            for pk in primary_keys[1:]:
                 stmt += f" AND target.{pk} = source.{pk}"
 
         return stmt
@@ -206,7 +240,21 @@ class MergeSQLOperator(BaseSQLOperator):
     def generate_update_clause(
         cls, source_table: Table, columns: Iterable[str] | Iterable[Column]
     ) -> str:
+        """
+        Generate the UPDATE clause for the MERGE statement using the columns to be updated.
 
+        Parameters
+        ----------
+        source_table : Table
+            The source table object.
+        columns : Iterable
+            Iterable of column names or column objects.
+
+        Returns
+        -------
+        str
+            The UPDATE clause for the MERGE statement.
+        """
         stmt = """ 
                 WHEN MATCHED THEN
                 UPDATE SET 
@@ -230,7 +278,32 @@ class MergeSQLOperator(BaseSQLOperator):
     def _generate_merge_sql(
         cls, target_table: Table, source_table: Table, holdlock: bool, set_
     ) -> str:
+        """
+        Generate SQL statement for merging data from `source_table` to `target_table`.
 
+        Parameters
+        ----------
+        target_table : Table
+            The table to merge data into.
+        source_table : Table
+            The table to merge data from.
+        holdlock : bool
+            Whether to use the HOLDLOCK hint in the SQL statement or not.
+        set_ : Iterable[Column] | Iterable[str] | None
+            The columns to update in case of a match between the `source_table` and
+            `target_table`.
+
+        Returns
+        -------
+        str
+            The SQL statement to merge the data.
+
+        Raises
+        ------
+        TypeError
+            If either `target_table` or `source_table` is not of type `Table` or
+            `DeclarativeMeta`.
+        """
         if not isinstance(source_table, Table) or not isinstance(target_table, Table):
             raise TypeError("Tables must be of type <Table> or <DeclarativeMeta>")
 
@@ -242,7 +315,7 @@ class MergeSQLOperator(BaseSQLOperator):
         sql = f""" 
                 MERGE {target_table.name} {"WITH (HOLDLOCK) as target" if holdlock else "as target"}
                 USING {source_table.name} as source
-                ON {cls.generate_on_clause(primary_key=target_table_pks)}
+                ON {cls.generate_on_clause(primary_keys=target_table_pks)}
 
                 WHEN NOT MATCHED  BY TARGET THEN
                     INSERT ({', '.join(cols)})
