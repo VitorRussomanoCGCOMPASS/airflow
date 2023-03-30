@@ -167,7 +167,7 @@ class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
     def convert_type(cls, value, **kwargs) -> Any:
         return value
 
-
+# FIXME : IF THERE IS NO OUTPUT. IT STILL TRIES TO LOOP
 class MSSQLOperator(CustomBaseSQLOperator):
     def __init__(
         self, *, conn_id="mssql-default", database: str | None = None, **kwargs
@@ -202,11 +202,15 @@ class MSSQLOperator(CustomBaseSQLOperator):
         cls, results: list[Any] | Any, descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
         """Processes results from SQL along with descriptions"""
-        output = []
+        if results:
+            output = []
         
-        for row in results:
-            output.append(tuple(row))
-        return output
+            for row in results:
+                output.append(tuple(row))
+            
+            return output
+        return results
+
 
     @classmethod
     def _results_to_dict(

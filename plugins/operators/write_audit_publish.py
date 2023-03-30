@@ -1,13 +1,13 @@
 from contextlib import closing
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Literal, Sequence
 
 from pyodbc import ProgrammingError
-from sqlalchemy import MetaData, Table, insert
+from sqlalchemy import Column, MetaData, Table
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
+from airflow.models.xcom_arg import XComArg
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
-from airflow.models.xcom_arg import XComArg
 
 
 class TemporaryTableSQLOperator(BaseSQLOperator):
@@ -112,12 +112,10 @@ class TemporaryTableSQLOperator(BaseSQLOperator):
 
 
 class InsertSQLOperator(BaseSQLOperator):
-    
 
-    template_fields: Sequence[str] = ("values")
-    template_ext: Sequence[str] = (".json")
+    template_fields: Sequence[str] = "values"
+    template_ext: Sequence[str] = ".json"
     template_fields_renderers = {"values": "json"}
-
 
     def __init__(
         self,
@@ -143,11 +141,11 @@ class InsertSQLOperator(BaseSQLOperator):
         hook = self.get_db_hook()
         engine = hook.get_sqlalchemy_engine()
 
-
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
             self.table = getattr(self.table, "__table__")
 
+        # This wont be needed anymore.
         if not isinstance(self.table, Table):
             metadata = MetaData()
             metadata.reflect(bind=engine)
@@ -159,56 +157,130 @@ class InsertSQLOperator(BaseSQLOperator):
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
 
-def on_conflict_do_nothing():
-    pass
+# TODO : IF ON CONFLICT DO UPDATE
+""" 
+WHEN MATCHED THEN
+UPDATE SET ....
+"""
 
-
-def on_conflict_do_update():
-    pass
-
-
-from typing import Literal
-
-
-
-# A ideia é suport que vamos ter dois modelos sqlalchemy
-# Porém, se nós criarmos run-time, isso vai significar que nao vai ter os mesmos 
 
 class MergeSQLOperator(BaseSQLOperator):
     def __init__(
         self,
         *,
-        source_table: str | None = None,
-        target_table: DeclarativeMeta | Table | str,
-        on_conflict=Literal["do_nothing", "do_update"],
+        conn_id: str | None = None,
+        database: str,
+        source_table: DeclarativeMeta | Table,
+        target_table: DeclarativeMeta | Table,
+        index_elements: list[Column] | Column | None = None,
+        index_where: None = None,
+        set_: Iterable[Column] | Iterable[str] | None = None,
+        holdlock: bool = True,
         **kwargs,
     ) -> None:
-        super().__init__(**kwargs)
+
+        hook_params = kwargs.pop("hook_params", {})
+        kwargs["hook_params"] = {"database": database, **hook_params}
+
+        super().__init__(
+            conn_id=conn_id,
+            **kwargs,
+        )
+
         self.source_table = source_table
         self.target_table = target_table
+        self.holdlock = holdlock
+        self.set_ = set_
 
     @classmethod
-    def generate_merge_sql(cls, target_table: Table, source_table: str) -> str:
-        return ""
+    def generate_on_clause(cls, primary_key: list) -> str:
+        stmt = f"target.{primary_key[0]} = source.{primary_key[0]}"
+
+        if len(primary_key) > 1:
+            for pk in primary_key[1:]:
+                stmt += f" AND target.{pk} = source.{pk}"
+
+        return stmt
+
+    @classmethod
+    def generate_update_clause(
+        cls, source_table: Table, columns: Iterable[str] | Iterable[Column]
+    ) -> str:
+
+        stmt = """ 
+                WHEN MATCHED THEN
+                UPDATE SET 
+                """
+            
+        for col in columns:
+            if isinstance(col, str):
+                # We make sure that there is a column with that name for safety
+                try:
+                    col =   getattr((getattr(source_table, "columns")), col)
+                except AttributeError as exc:
+                    raise exc
+            
+            if isinstance(col, Column):
+                stmt += f"target.{col.name} = source.{col.name}"
+                
+
+        return stmt
+
+    @classmethod
+    def _generate_merge_sql(
+        cls, target_table: Table, source_table: Table, holdlock: bool, set_
+    ) -> str:
+
+        if not isinstance(source_table, Table) or not isinstance(target_table, Table):
+            raise TypeError("Tables must be of type <Table> or <DeclarativeMeta>")
+
+        target_table_pks = [pk.name for pk in target_table.primary_key]
+
+        cols = [i.name for i in source_table.columns]
+        source_prefixed_non_pks = ["source" + "." + col for col in cols]
+
+        sql = f""" 
+                MERGE {target_table.name} {"WITH (HOLDLOCK) as target" if holdlock else "as target"}
+                USING {source_table.name} as source
+                ON {cls.generate_on_clause(primary_key=target_table_pks)}
+
+                WHEN NOT MATCHED  BY TARGET THEN
+                    INSERT ({', '.join(cols)})
+                    VALUES ({', '.join(source_prefixed_non_pks)})
+                """
+
+        if set_:
+            update_stmt = cls.generate_update_clause(
+                source_table=source_table, columns=set_
+            )
+            sql += update_stmt
+
+        sql +=';'
+
+        return sql
 
     def execute(self, context: Context):
 
         hook = self.get_db_hook()
-        engine = hook.get_sqlalchemy_engine()
 
         if isinstance(self.target_table, DeclarativeMeta):
             # Transform into Table Object for consistency
             self.target_table = getattr(self.target_table, "__table__")
 
-        if not isinstance(self.target_table, Table):
-            # if target_table is str, we generate the model
-            metadata = MetaData()
-            metadata.reflect(bind=engine)
-            self.target_table = Table(self.target_table, metadata, autoload_with=engine)
+        if isinstance(self.source_table, DeclarativeMeta):
+            self.source_table = getattr(self.source_table, "__table__")
 
-        if not self.source_table:
-            self.source_table = self.target_table.name + "_temp"
-        # Now we have source_table as string and target_table as TABLE.
-        sql = self.generate_merge_sql(self.target_table, self.source_table)
+        sql = self._generate_merge_sql(
+            source_table=self.source_table,
+            target_table=self.target_table,
+            holdlock=self.holdlock,
+            set_=self.set_,
+        )
+        
+        self.log.debug("Generated sql: %s", sql)
+       
         hook.run(sql)
-    
+       
+        self.log.info("Sucessfuly merged.")
+
+

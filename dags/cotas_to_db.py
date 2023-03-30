@@ -1,3 +1,4 @@
+from flask_api.models.funds import FundsValues
 from operators.api import BritechOperator
 from operators.custom_sql import MSSQLOperator
 from operators.write_audit_publish import InsertSQLOperator
@@ -7,9 +8,6 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.models.baseoperator import chain
 from airflow.utils.task_group import TaskGroup
-from flask_api.models.funds import TempFundsValues, FundsValues
-from operators.write_audit_publish import MergeSQLOperator
-
 
 default_args = {
     "owner": "airflow",
@@ -18,7 +16,7 @@ default_args = {
 
 
 with DAG(
-    "funds_values_db_dev",
+    "funds_values_db",
     schedule=None,
     default_args=default_args,
     catchup=False,
@@ -78,36 +76,18 @@ with DAG(
 
         joined_data = join_data(fetch_funds_data.output)
 
-        truncate = MSSQLOperator(
-            task_id="truncate",
-            database="DB_Brasil",
-            conn_id="mssql-default",
-            sql="TRUNCATE TABLE temp_funds_values",
-            do_xcom_push=False,
-        )
-
         push_data = InsertSQLOperator(
             task_id="push_data",
             database="DB_Brasil",
             conn_id="mssql-default",
-            table=TempFundsValues,
+            table=FundsValues,
             values=joined_data,
         )
-        merging = MergeSQLOperator(
-            task_id="merge",
-            source_table=TempFundsValues,
-            target_table=FundsValues,
-            holdlock=True,
-            database="DB_Brasil",
-            conn_id="mssql-default",
-            set_=("PLFechamento",),
-        )
+
         chain(
-            truncate,
             fetch_active_funds,
             copied_kwargs,
             fetch_funds_data,
             joined_data,
             push_data,
-            merging,
         )
