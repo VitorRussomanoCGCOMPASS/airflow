@@ -1,5 +1,5 @@
 from include.schemas.base_schema import CustomSchema
-from flask_api.models.ima import ComponentsIMA, IMA
+from flask_api.models.anbima import TempComponentsIMA, TempIMA
 from marshmallow import EXCLUDE, pre_load
 from marshmallow.fields import Float
 from marshmallow_sqlalchemy.fields import Nested
@@ -8,7 +8,7 @@ from marshmallow_sqlalchemy.fields import Nested
 
 class ComponentsIMASchema(CustomSchema):
     class Meta:
-        model = ComponentsIMA
+        model = TempComponentsIMA
         unknown = EXCLUDE
         dateformat= "%Y-%m-%d"
         load_instance= True
@@ -19,7 +19,7 @@ class ComponentsIMASchema(CustomSchema):
 
 class IMASchema(CustomSchema):
     class Meta:
-        model = IMA
+        model = TempIMA
         unknown = EXCLUDE
         load_instance= True
         load_relationships = False

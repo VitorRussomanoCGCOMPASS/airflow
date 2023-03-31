@@ -1,4 +1,4 @@
-from flask_api.models.debentures import Debentures
+from flask_api.models.anbima import TempDebentures
 from marshmallow import EXCLUDE, fields, pre_load
 
 from include.schemas.base_schema import CustomSchema
@@ -8,7 +8,7 @@ from include.schemas.base_schema import CustomSchema
 
 class DebenturesSchema(CustomSchema):
     class Meta:
-        model = Debentures
+        model = TempDebentures
         unknown = EXCLUDE
         dateformat = "%Y-%m-%d"
         load_instance=True

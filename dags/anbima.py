@@ -1,34 +1,16 @@
-import logging
-from typing import Any, Type
-
-from marshmallow_sqlalchemy import SQLAlchemySchema
-from operators.alchemy import SQLAlchemyOperator
+import flask_api.models.anbima as anbima
+from flask_api.models.anbima.ima import TempProcessingIMA
 from operators.api import AnbimaOperator
+from operators.custom_sql import SQLCheckOperator, MSSQLOperator
+from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
 from pendulum import datetime
 from sensors.anbima import AnbimaSensor
-from sqlalchemy.orm import Session
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
-from airflow.operators.empty import EmptyOperator
-from airflow.operators.latest_only import LatestOnlyOperator
 from airflow.operators.python import ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
-from include.schemas.cricra import CriCraSchema
-from include.schemas.debentures import DebenturesSchema
-from include.schemas.ima import IMASchema
-from include.schemas.vna import VNASchema
 from include.utils.is_business_day import _is_business_day
-
-
-def _upload_task(
-    data: Any, session: Session, mshm_schema: Type[SQLAlchemySchema], many: bool
-) -> None:
-
-    objs = mshm_schema(session=session).load(data, many=many)
-    logging.info("Adding objects to session")
-    session.add_all(objs)
-
 
 default_args = {
     "owner": "airflow",
@@ -36,6 +18,8 @@ default_args = {
     "mode": "reschedule",
     "timeout": 60 * 60,
     "catchup": False,
+    "conn_id": "mssql-default",
+    "database": "DB_Brasil",
 }
 
 
@@ -50,7 +34,7 @@ with DAG(
         provide_context=True,
     )
 
-    with TaskGroup(group_id="fetch_from_anbima") as fetch_from_anbima:
+    with TaskGroup(group_id="vna") as vna:
 
         wait_vna = AnbimaSensor(
             task_id="wait_vna",
@@ -66,19 +50,38 @@ with DAG(
             request_params={
                 "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
             },
+            do_xcom_push=True,
         )
 
-        store_vna = SQLAlchemyOperator(
+        store_vna = InsertSQLOperator(
             task_id="store_vna",
-            conn_id="postgres_userdata",
-            python_callable=_upload_task,
-            provide_context=True,
-            op_kwargs={
-                "data": fetch_vna.output,
-                "mshm_schema": VNASchema,
-                "many": True,
-            },
+            table=anbima.TempVNA,
+            values=fetch_vna.output,
         )
+
+        check_vna_date = SQLCheckOperator(
+            task_id="check_vna_date",
+            sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from temp_vna_anbima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                THEN 0
+                ELSE 1 
+                END
+                """,
+            database="DB_Brasil",
+            conn_id="mssql-default",
+        )
+
+        merge_vna_tables = MergeSQLOperator(
+            task_id="merge_vna_tables",
+            source_table=anbima.TempVNA,
+            target_table=anbima.VNA,
+        )
+
+        chain(wait_vna, fetch_vna, store_vna, check_vna_date, merge_vna_tables)
+
+    with TaskGroup(group_id="debentures") as debentures:
 
         wait_debentures = AnbimaSensor(
             task_id="wait_debentures",
@@ -94,19 +97,42 @@ with DAG(
             request_params={
                 "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
             },
+            do_xcom_push=True,
+        )
+        store_debentures = InsertSQLOperator(
+            task_id="store_debentures",
+            table=anbima.TempDebentures,
+            values=fetch_debentures.output,
         )
 
-        store_debentures = SQLAlchemyOperator(
-            task_id="store_debentures",
-            conn_id="postgres_userdata",
-            python_callable=_upload_task,
-            provide_context=True,
-            op_kwargs={
-                "data": fetch_debentures.output,
-                "mshm_schema": DebenturesSchema,
-                "many": True,
-            },
+        check_debentures_date = SQLCheckOperator(
+            task_id="check_debentures_date",
+            sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from temp_debentures where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                THEN 0
+                ELSE 1 
+                END
+                """,
+            database="DB_Brasil",
+            conn_id="mssql-default",
         )
+
+        merge_debentures_table = MergeSQLOperator(
+            task_id="merge_debentures_table",
+            source_table=anbima.TempDebentures,
+            target_table=anbima.Debentures,
+        )
+        chain(
+            wait_debentures,
+            fetch_debentures,
+            store_debentures,
+            check_debentures_date,
+            merge_debentures_table,
+        )
+    with TaskGroup(group_id="cricra") as cricra:
+
         wait_cricra = AnbimaSensor(
             task_id="wait_cricra",
             request_params={
@@ -121,19 +147,44 @@ with DAG(
             request_params={
                 "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
             },
+            do_xcom_push=True,
         )
 
-        store_cricra = SQLAlchemyOperator(
+        store_cricra = InsertSQLOperator(
             task_id="store_cricra",
-            conn_id="postgres_userdata",
-            python_callable=_upload_task,
-            provide_context=True,
-            op_kwargs={
-                "data": fetch_cricra.output,
-                "mshm_schema": CriCraSchema,
-                "many": True,
-            },
+            table=anbima.TempCriCra,
+            values=fetch_cricra.output,
         )
+
+        check_cricra_date = SQLCheckOperator(
+            task_id="check_cricra_date",
+            sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from temp_cricra_anbima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                THEN 0
+                ELSE 1 
+                END
+                """,
+            database="DB_Brasil",
+            conn_id="mssql-default",
+        )
+
+        merge_cricra_tables = MergeSQLOperator(
+            task_id="merge_cricra_tables",
+            source_table=anbima.TempCriCra,
+            target_table=anbima.CriCra,
+        )
+
+        chain(
+            wait_cricra,
+            fetch_cricra,
+            store_cricra,
+            check_cricra_date,
+            merge_cricra_tables,
+        )
+
+    with TaskGroup(group_id="ima") as ima:
 
         wait_ima = AnbimaSensor(
             task_id="wait_ima",
@@ -149,135 +200,64 @@ with DAG(
             request_params={
                 "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
             },
+            do_xcom_push=True,
         )
 
-        store_ima = SQLAlchemyOperator(
+        store_ima = InsertSQLOperator(
             task_id="store_ima",
-            conn_id="postgres_userdata",
-            python_callable=_upload_task,
-            provide_context=True,
-            op_kwargs={
-                "data": fetch_ima.output,
-                "mshm_schema": IMASchema,
-                "many": True,
-            },
+            table=TempProcessingIMA,
+            values=fetch_ima.output,
+        )
+
+        check_ima_date = SQLCheckOperator(
+            task_id="check_ima_date",
+            sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from temp_processing_ima_anbima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                THEN 0
+                ELSE 1 
+                END
+                """,
+            database="DB_Brasil",
+            conn_id="mssql-default",
+        )
+
+        split_ima = MSSQLOperator(
+            task_id="split_ima",
+            sql=""" 
+                INSERT INTO temp_ima_anbima(indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield)
+                SELECT indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield
+                FROM temp_processing_ima_anbima
+                """,
+        )
+        split_ima_to_components = MSSQLOperator(
+            task_id="split_ima_to_components",
+            sql=""" 
+            INSERT INTO temp_components_ima_anbima (indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade)
+            SELECT indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade
+            FROM temp_processing_ima_anbima
+                """,
+        )
+
+        merge_ima_tables = MergeSQLOperator(
+            task_id="merge_ima_tables",
+            source_table=anbima.TempIMA,
+            target_table=anbima.IMA,
+        )
+        merge_components_ima_tables = MergeSQLOperator(
+            task_id="merge_ima_components_table",
+            source_table=anbima.TempComponentsIMA,
+            target_table=anbima.ComponentsIMA,
         )
 
         chain(
-            [wait_cricra, wait_debentures, wait_ima, wait_vna],
-            [fetch_cricra, fetch_debentures, fetch_ima, fetch_vna],
-            [store_cricra, store_debentures, store_ima, store_vna],
+            wait_ima,
+            fetch_ima,
+            store_ima,
+            check_ima_date,
+            [split_ima, split_ima_to_components],
+            [merge_ima_tables, merge_components_ima_tables],
         )
 
-    chain(is_business_day, fetch_from_anbima)
-
-
-""" 
-
-    with TaskGroup(group_id="yield-ima-b") as yield_ima_b:
-        @task
-        def generate_yield_ima_b(session, date: str, past_date: str):
-            from flask_api.models.ima import IMA
-            from flask_api.models.vna import VNA
-            from flask_api.models.indexes import IndexValues
-
-            ima = (
-                session.query(IMA).filter_by(data_referencia=date, indice="IMA-B").one_or_none()
-            )
-
-            vna = (
-                session.query(VNA)
-                .filter_by(data_referencia=date, codigo_selic="760100")
-                .one_or_none()
-            )
-
-            past_vna = (
-                session.query(VNA)
-                .filter_by(data_referencia=past_date, codigo_selic="760100")
-                .one_or_none()
-            )
-
-            # TODO : REFER TO THE PROPER INDEX
-
-            vna_diff = vna.vna / past_vna.vna
-
-            ima_yield = (1 + ima.yild / 100) ^ (1 / 252)
-
-            yield_plus_vna = ima_yield * vna_diff
-
-            
-            past_pu = (
-                session.query(IndexValues)
-                .filter_by(data_referencia=past_date, index="PU")
-                .one_or_none()
-            )
-
-            past_pu.value * yield_plus_vna
-
-            # TODO : MERGE !
-
-            if (
-                session.query(IndexValues)
-                .filter_by(data_referencia=date, index="PU")
-                .one_or_none()
-            ):
-                session.merge(
-                    IndexValues
-                )  # result ima * result_vna total rsesult * total_result d-1
-
-        generated_yield_ima_b = generate_yield_ima_b()
-        calculate = EmptyOperator(task_id="calculate")
-
-        # PASS USING XCOM.
-    
-        post_to_britech = EmptyOperator(
-            task_id="post_to_britech"
-        )
-
-        chain(calculate, post_to_britech)
-
-    chain([store_ima, store_vna], latest_only, yield_ima_b)
-
- """
-
-""" 
-select ((1 +a.yield / 100 ) ^1/252) dailyima 
-from ima_anbima a 
-where a.indice = 'IMA-B'
-and a.data_referencia = '2023-02-15'
-
- """
-
-
-""" 
- 
-SELECT ( 
-	select vna from anbima_vna
-where codigo_selic= '760100'
-and data_referencia = '2023-02-15')
-	/
-	(
-	select vna from anbima_vna
-where codigo_selic= '760100'
-and data_referencia = '2023-02-14') as vna_ratio
- """
-
-
-""" 
- 
-WITH VNA AS (SELECT ( 
-	select vna from anbima_vna
-where codigo_selic= '760100'
-and data_referencia = '2023-02-15')
-	/
-	(
-	select vna from anbima_vna
-where codigo_selic= '760100'
-and data_referencia = '2023-02-14') as vna_ratio )
-SELECT VNA.vna_ratio * ((1 +a.yield / 100 ) ^1/252) dailyima 
-FROM ima_anbima a , VNA 
-where a.indice = 'IMA-B'
-and a.data_referencia = '2023-02-15'
-
--- STILL HAVE TO GET LAST PU AND MULTIPLY THIS VALUE.
-"""
+    chain(is_business_day, [debentures, ima, cricra, vna])

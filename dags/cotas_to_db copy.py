@@ -25,6 +25,13 @@ with DAG(
 
     with TaskGroup(group_id="funds_processing") as funds_processing:
 
+        pre_clean_temp_table = MSSQLOperator(
+            task_id="pre_clean_temp_table",
+            database="DB_Brasil",
+            conn_id="mssql-default",
+            sql="DELETE FROM temp_funds_values",
+        )
+
         fetch_active_funds = MSSQLOperator(
             task_id="fetch_active_funds",
             database="DB_Brasil",
@@ -76,14 +83,6 @@ with DAG(
 
         joined_data = join_data(fetch_funds_data.output)
 
-        truncate = MSSQLOperator(
-            task_id="truncate",
-            database="DB_Brasil",
-            conn_id="mssql-default",
-            sql="TRUNCATE TABLE temp_funds_values",
-            do_xcom_push=False,
-        )
-
         push_data = InsertSQLOperator(
             task_id="push_data",
             database="DB_Brasil",
@@ -91,7 +90,7 @@ with DAG(
             table=TempFundsValues,
             values=joined_data,
         )
-        # See if this works
+
         check_non_zero_pl_cota = SQLCheckOperator(
             task_id="check_non_zero_pl_cota",
             sql="""
@@ -100,6 +99,20 @@ with DAG(
                 ( SELECT PLFechamento, CotaFechamento from temp_funds_values where PLFechamento=0 or CotaFechamento = 0 ) 
                 THEN 1 
                 ELSE 0 
+                END
+                """,
+            database="DB_Brasil",
+            conn_id="mssql-default",
+        )
+
+        check_date = SQLCheckOperator(
+            task_id="check_date",
+            sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from temp_funds_values where Data != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                THEN 0
+                ELSE 1 
                 END
                 """,
             database="DB_Brasil",
@@ -124,13 +137,13 @@ with DAG(
         )
 
         chain(
-            truncate,
+            pre_clean_temp_table,
             fetch_active_funds,
             copied_kwargs,
             fetch_funds_data,
             joined_data,
             push_data,
-            check_non_zero_pl_cota,
+            [check_non_zero_pl_cota, check_date],
             merge_tables,
             clean_temp_table,
         )

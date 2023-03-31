@@ -1,4 +1,7 @@
+from flask_api.models.cotista_op import CotistaOp, TempCotistaOp
 from operators.api import BritechOperator
+from operators.custom_sql import MSSQLOperator, SQLCheckOperator
+from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
 from pendulum import datetime
 from sensors.britech import BritechEmptySensor
 
@@ -6,18 +9,10 @@ from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.latest_only import LatestOnlyOperator
 from airflow.operators.python import ShortCircuitOperator
-from airflow.providers.common.sql.operators.sql import (
-    BranchSQLOperator,
-    SQLCheckOperator,
-    SQLExecuteQueryOperator,
-)
+from airflow.providers.common.sql.operators.sql import BranchSQLOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 from include.utils.is_business_day import _is_business_day
-
-from flask_api.models.cotista_op import TempCotistaOp, CotistaOp
-from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
-from operators.custom_sql import MSSQLOperator, SQLCheckOperator
 
 default_args = {
     "owner": "airflow",
@@ -27,8 +22,6 @@ default_args = {
     "conn_id": "mssql-default",
     "database": "DB_Brasil",
 }
-
- # 2 , 31 ,3
 
 with DAG(
     dag_id="cotista_op",
@@ -44,13 +37,12 @@ with DAG(
     )
 
     with TaskGroup(group_id="new_cotista_op") as new_cotista_op:
-
-        truncate_table = MSSQLOperator(
-            task_id='truncate_table',
-            sql = "TRUNCATE TABLE temp_cotista_op"
+        pre_clean_temp_table = MSSQLOperator(
+            task_id="pre_clean_temp_table",
+            sql="DELETE FROM temp_cotista_op",
         )
-        
-        # FIXME : DS?
+
+        # FIXME : DS? -> CHANGE TO TIMEZONE. TS ..
         cotista_op_sensor = BritechEmptySensor(
             task_id="sensor_cotista_op",
             endpoint="/Fundo/OperacaoCotistaAnalitico",
@@ -80,8 +72,20 @@ with DAG(
             values=fetch_cotista_op.output,
         )
 
-        check_data = SQLCheckOperator(
+        check_date = SQLCheckOperator(
             task_id="check_data",
+            sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from temp_cotista_op where DataOperacao != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                THEN 0
+                ELSE 1 
+                END
+                """,
+        )
+
+        check_other_conditions = SQLCheckOperator(
+            task_id="check_other_conditions",
             sql=""" SELECT CASE WHEN EXISTS ( SELECT * WHERE 1 =1 ) THEN 1 ELSE 0 END  """,
         )
 
@@ -98,11 +102,11 @@ with DAG(
 
         chain(
             is_business_day,
-            truncate_table,
+            pre_clean_temp_table,
             cotista_op_sensor,
             fetch_cotista_op,
             push_data,
-            check_data,
+            [check_date, check_other_conditions],
             merge_tables,
             clean_temp_table,
         )
@@ -118,7 +122,7 @@ with DAG(
             follow_task_ids_if_true=["update_cotista_op"],
         )
 
-        update_cotista_op = SQLExecuteQueryOperator(
+        update_cotista_op = MSSQLOperator(
             task_id="update_cotista_op",
             sql="op_update.sql",
         )

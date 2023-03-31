@@ -1,4 +1,4 @@
-from flask_api.models.cricra import CriCra
+from flask_api.models.anbima import TempCriCra
 from marshmallow import EXCLUDE, fields, pre_load
 
 
@@ -7,7 +7,7 @@ from include.schemas.base_schema import CustomSchema
 
 class CriCraSchema(CustomSchema):
     class Meta:
-        model = CriCra
+        model = TempCriCra
         unknown = EXCLUDE
         dateformat = "%Y-%m-%d"
         load_instance = True
