@@ -116,8 +116,8 @@ with DAG(
             set_=("PLFechamento", "CotaFechamento"),
         )
 
-        clean_temp_table_data = MSSQLOperator(
-            task_id="clean_temp_table_data",
+        clean_temp_table = MSSQLOperator(
+            task_id="clean_temp_table",
             database="DB_Brasil",
             conn_id="mssql-default",
             sql="DELETE FROM temp_funds_values",
@@ -132,5 +132,5 @@ with DAG(
             push_data,
             check_non_zero_pl_cota,
             merge_tables,
-            clean_temp_table_data,
+            clean_temp_table,
         )

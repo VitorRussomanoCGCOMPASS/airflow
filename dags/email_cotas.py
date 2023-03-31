@@ -354,13 +354,13 @@ with DAG(
             sql="declare @date date set @date = '{{macros.template_tz.convert_ts(ds)}}' EXEC dbo.SP_ACTIVE_FUNDS @date",
         )
 
-        @task 
+        @task
         def process_xcom(values):
             from itertools import chain
-            return tuple(chain(*values))
+
+            return ",".join(map(str, list(chain(*values))))
 
         processed_xcom = process_xcom(complete_fetch_funds.output)
-        
 
         fetch_funds_return = BritechOperator(
             task_id="fetch_funds_return",
@@ -377,10 +377,10 @@ with DAG(
             FROM funds a 
             JOIN funds_values c 
             ON a.britech_id = c.IdCarteira 
-            WHERE britech_id in {{params.ids}}
+            WHERE britech_id in ({{params.ids}})
             AND "Data" = inception_date 
             OR "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id in {{params.ids}}
+            AND britech_id in ({{params.ids}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY "Data") AS inception_cota
             FROM Worktable)
