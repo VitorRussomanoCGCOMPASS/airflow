@@ -1,15 +1,13 @@
+from flask_api.models.funds import FundsValues, TempFundsValues
 from operators.api import BritechOperator
-from operators.custom_sql import MSSQLOperator
-from operators.write_audit_publish import InsertSQLOperator
+from operators.custom_sql import MSSQLOperator, SQLCheckOperator
+from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
 from pendulum import datetime
 
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models.baseoperator import chain
 from airflow.utils.task_group import TaskGroup
-from flask_api.models.funds import TempFundsValues, FundsValues
-from operators.write_audit_publish import MergeSQLOperator
-
 
 default_args = {
     "owner": "airflow",
@@ -93,15 +91,38 @@ with DAG(
             table=TempFundsValues,
             values=joined_data,
         )
-        merging = MergeSQLOperator(
-            task_id="merge",
+        # See if this works
+        check_non_zero_pl_cota = SQLCheckOperator(
+            task_id="check_non_zero_pl_cota",
+            sql="""
+                SELECT CASE WHEN 
+                    NOT EXISTS 
+                ( SELECT PLFechamento, CotaFechamento from temp_funds_values where PLFechamento=0 or CotaFechamento = 0 ) 
+                THEN 1 
+                ELSE 0 
+                END
+                """,
+            database="DB_Brasil",
+            conn_id="mssql-default",
+        )
+
+        merge_tables = MergeSQLOperator(
+            task_id="merge_tables",
             source_table=TempFundsValues,
             target_table=FundsValues,
             holdlock=True,
             database="DB_Brasil",
             conn_id="mssql-default",
-            set_=("PLFechamento",),
+            set_=("PLFechamento", "CotaFechamento"),
         )
+
+        clean_temp_table_data = MSSQLOperator(
+            task_id="clean_temp_table_data",
+            database="DB_Brasil",
+            conn_id="mssql-default",
+            sql="DELETE FROM temp_funds_values",
+        )
+
         chain(
             truncate,
             fetch_active_funds,
@@ -109,5 +130,7 @@ with DAG(
             fetch_funds_data,
             joined_data,
             push_data,
-            merging,
+            check_non_zero_pl_cota,
+            merge_tables,
+            clean_temp_table_data,
         )

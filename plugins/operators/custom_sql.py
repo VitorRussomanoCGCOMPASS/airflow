@@ -3,18 +3,11 @@ import datetime
 import json
 import time
 from decimal import Decimal
-from tempfile import NamedTemporaryFile
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
-
-from airflow.compat.functools import cached_property
-from airflow.exceptions import AirflowException
 from airflow.providers.common.sql.hooks.sql import (
-    fetch_all_handler,
-    return_single_query_results,
-)
+    fetch_all_handler, return_single_query_results)
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
-from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 from airflow.utils.context import Context
 
 
@@ -167,6 +160,7 @@ class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
     def convert_type(cls, value, **kwargs) -> Any:
         return value
 
+
 # FIXME : IF THERE IS NO OUTPUT. IT STILL TRIES TO LOOP
 class MSSQLOperator(CustomBaseSQLOperator):
     def __init__(
@@ -204,13 +198,12 @@ class MSSQLOperator(CustomBaseSQLOperator):
         """Processes results from SQL along with descriptions"""
         if results:
             output = []
-        
+
             for row in results:
                 output.append(tuple(row))
-            
+
             return output
         return results
-
 
     @classmethod
     def _results_to_dict(
@@ -222,13 +215,13 @@ class MSSQLOperator(CustomBaseSQLOperator):
         if isinstance(descriptions, list):
             if descriptions[-1] is not None:
                 column_names = [
-                    column[0] if column is not None else None for column in descriptions[-1]
+                    column[0] if column is not None else None
+                    for column in descriptions[-1]
                 ]
                 for row in results:
                     dict_results.append(dict(zip(column_names, row)))
 
         return dict_results
-
 
 
 class PostgresOperator(CustomBaseSQLOperator):
@@ -295,3 +288,73 @@ class PostgresOperator(CustomBaseSQLOperator):
 
         return results
 
+
+class SQLCheckOperator(BaseSQLOperator):
+    """
+    Performs checks against a db. The ``SQLCheckOperator`` expects
+    a sql query that will return a single row. Each value on that
+    first row is evaluated using python ``bool`` casting. If any of the
+    values return ``False`` the check is failed and errors out.
+    Note that Python bool casting evals the following as ``False``:
+    * ``False``
+    * ``0``
+    * Empty string (``""``)
+    * Empty list (``[]``)
+    * Empty dictionary or set (``{}``)
+    Given a query like ``SELECT COUNT(*) FROM foo``, it will fail only if
+    the count ``== 0``. You can craft much more complex query that could,
+    for instance, check that the table has the same number of rows as
+    the source table upstream, or that the count of today's partition is
+    greater than yesterday's partition, or that a set of metrics are less
+    than 3 standard deviation for the 7 day average.
+    This operator can be used as a data quality check in your pipeline, and
+    depending on where you put it in your DAG, you have the choice to
+    stop the critical path, preventing from
+    publishing dubious data, or on the side and receive email alerts
+    without stopping the progress of the DAG.
+    :param sql: the sql to be executed. (templated)
+    :param conn_id: the connection ID used to connect to the database.
+    :param database: name of database which overwrite the defined one in connection
+    :param parameters: (optional) the parameters to render the SQL query with.
+    """
+
+    template_fields: Sequence[str] = ("sql",)
+    template_ext: Sequence[str] = (
+        ".hql",
+        ".sql",
+    )
+    template_fields_renderers = {"sql": "sql"}
+    ui_color = "#fff7e6"
+
+    def __init__(
+        self,
+        *,
+        sql: str,
+        conn_id: str | None = None,
+        database: str | None = None,
+        parameters: Iterable | Mapping | None = None,
+        **kwargs,
+    ) -> None:
+
+        if database is not None:
+            hook_params = kwargs.pop("hook_params", {})
+            kwargs["hook_params"] = {"database": database, **hook_params}
+
+        super().__init__(database=database, **kwargs, conn_id=conn_id)
+        self.sql = sql
+        self.parameters = parameters
+
+    def execute(self, context: Context):
+        self.log.info("Executing SQL check: %s", self.sql)
+        records = self.get_db_hook().get_first(self.sql, self.parameters)
+
+        self.log.info("Record: %s", records)
+
+        if not records:
+            self._raise_exception(f"The following query returned zero rows: {self.sql}")
+        elif not all(bool(r) for r in records):
+            self._raise_exception(
+                f"Test failed.\nQuery:\n{self.sql}\nResults:\n{records!s}"
+            )
+
+        self.log.info("Success.")

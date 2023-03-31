@@ -1,4 +1,4 @@
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Sequence, Generator
 
 from sqlalchemy import Column, MetaData, Table
 from sqlalchemy.orm.decl_api import DeclarativeMeta
@@ -127,8 +127,25 @@ class MergeSQLOperator(BaseSQLOperator):
         return stmt
 
     @classmethod
+    def validate_columns(
+        cls, table: Table, columns: Iterable[str] | Iterable[Column]
+    ) -> Generator:
+
+        for col in columns:
+            if isinstance(col, str):
+                # We make sure that there is a column with that name for safety
+                try:
+                    col = getattr((getattr(table, "columns")), col)
+                except AttributeError:
+                    raise Exception(
+                        "There is no column named %s in table %s", col, table
+                    )
+            if isinstance(col, Column):
+                yield col
+
+    @classmethod
     def generate_update_clause(
-        cls, source_table: Table, columns: Iterable[str] | Iterable[Column]
+        cls, table: Table, columns: Iterable[str] | Iterable[Column]
     ) -> str:
         """
         Generate the UPDATE clause for the MERGE statement using the columns to be updated.
@@ -136,7 +153,7 @@ class MergeSQLOperator(BaseSQLOperator):
         Parameters
         ----------
         source_table : Table
-            The source table object.
+            The table object.
         columns : Iterable
             Iterable of column names or column objects.
 
@@ -150,18 +167,13 @@ class MergeSQLOperator(BaseSQLOperator):
                 UPDATE SET 
                 """
 
-        for col in columns:
-            if isinstance(col, str):
-                # We make sure that there is a column with that name for safety
-                try:
-                    col = getattr((getattr(source_table, "columns")), col)
-                except AttributeError:
-                    raise Exception(
-                        "There is no column named %s in table %s", col, source_table
-                    )
+        cols  =cls.validate_columns(table, columns)
 
-            if isinstance(col, Column):
-                stmt += f"target.{col.name} = source.{col.name}"
+        f_col = next(cols)
+        stmt += f"target.{f_col.name} =  source.{f_col.name}"
+        
+        for col in cols:
+            stmt+= f", target.{col.name} =  source.{col.name}"
 
         return stmt
 
@@ -215,11 +227,11 @@ class MergeSQLOperator(BaseSQLOperator):
 
         if set_:
             update_stmt = cls.generate_update_clause(
-                source_table=source_table, columns=set_
+                table=source_table, columns=set_
             )
             sql += update_stmt
 
-        return sql + ";"
+        return sql + " ;"
 
     def execute(self, context: Context):
 

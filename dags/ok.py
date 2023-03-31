@@ -24,4 +24,5 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/mssql/"],
 ):
 
-    
+    pass
+

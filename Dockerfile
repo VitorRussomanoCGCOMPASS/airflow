@@ -7,7 +7,6 @@ RUN apt-get -y install git
 COPY requirements.txt /requirements.txt
 
 USER airflow
-# ENV PYTHONPATH "${PYTHONPATH}:C:/Users/Vitor Russomano/airflow/mymoduleabc:/opt/airflow/mymoduleabc"
 ENV PYTHONPATH "${PYTHONPATH}:/opt/airflow/include"
 
 RUN pip install --user --upgrade pip
