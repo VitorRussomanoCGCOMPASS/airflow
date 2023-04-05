@@ -1,4 +1,4 @@
-from flask_api.models.funds import FundsValues, TempFundsValues
+from flask_api.models.funds import FundsValues, StageFundsValues
 from operators.api import BritechOperator
 from operators.custom_sql import MSSQLOperator, SQLCheckOperator
 from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
@@ -29,7 +29,7 @@ with DAG(
             task_id="pre_clean_temp_table",
             database="DB_Brasil",
             conn_id="mssql-default",
-            sql="DELETE FROM temp_funds_values",
+            sql="DELETE FROM stage_funds_values",
         )
 
         fetch_active_funds = MSSQLOperator(
@@ -87,7 +87,7 @@ with DAG(
             task_id="push_data",
             database="DB_Brasil",
             conn_id="mssql-default",
-            table=TempFundsValues,
+            table=StageFundsValues,
             values=joined_data,
         )
 
@@ -96,7 +96,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     NOT EXISTS 
-                ( SELECT PLFechamento, CotaFechamento from temp_funds_values where PLFechamento=0 or CotaFechamento = 0 ) 
+                ( SELECT PLFechamento, CotaFechamento from stage_funds_values where PLFechamento=0 or CotaFechamento = 0 ) 
                 THEN 1 
                 ELSE 0 
                 END
@@ -110,7 +110,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from temp_funds_values where Data != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_funds_values where Data != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -121,7 +121,7 @@ with DAG(
 
         merge_tables = MergeSQLOperator(
             task_id="merge_tables",
-            source_table=TempFundsValues,
+            source_table=StageFundsValues,
             target_table=FundsValues,
             holdlock=True,
             database="DB_Brasil",
@@ -133,7 +133,7 @@ with DAG(
             task_id="clean_temp_table",
             database="DB_Brasil",
             conn_id="mssql-default",
-            sql="DELETE FROM temp_funds_values",
+            sql="DELETE FROM stage_funds_values",
         )
 
         chain(

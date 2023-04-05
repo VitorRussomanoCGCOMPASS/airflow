@@ -2,7 +2,7 @@ from airflow.models import BaseOperator
 from airflow.providers.microsoft.azure.hooks.fileshare import AzureFileShareHook
 from airflow.utils.context import Context
 from typing import Any
-from include.xcom_backend import HTMLXcom
+from xcom_backend import HTMLXcom
 
 
 class FileShareOperator(BaseOperator):

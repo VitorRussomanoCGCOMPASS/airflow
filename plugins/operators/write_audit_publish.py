@@ -7,7 +7,6 @@ from airflow.models.xcom_arg import XComArg
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
-
 class InsertSQLOperator(BaseSQLOperator):
 
     template_fields: Sequence[str] = "values"

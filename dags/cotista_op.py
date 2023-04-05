@@ -1,4 +1,4 @@
-from flask_api.models.cotista_op import CotistaOp, TempCotistaOp
+from flask_api.models.cotista_op import CotistaOp, StageCotistaOp
 from operators.api import BritechOperator
 from operators.custom_sql import MSSQLOperator, SQLCheckOperator
 from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
@@ -68,7 +68,7 @@ with DAG(
 
         push_data = InsertSQLOperator(
             task_id="push_data",
-            table=TempCotistaOp,
+            table=StageCotistaOp,
             values=fetch_cotista_op.output,
         )
 
@@ -91,7 +91,7 @@ with DAG(
 
         merge_tables = MergeSQLOperator(
             task_id="merge_tables",
-            source_table=TempCotistaOp,
+            source_table=StageCotistaOp,
             target_table=CotistaOp,
         )
 

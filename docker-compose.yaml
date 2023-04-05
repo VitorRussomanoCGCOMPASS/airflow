@@ -68,7 +68,7 @@ x-airflow-common:
     AIRFLOW__EMAIL__EMAIL_BACKEND: airflow.providers.sendgrid.utils.emailer.send_email
     AIRFLOW__EMAIL__EMAIL_CONN_ID: sendgrid-default
     SENDGRID_MAIL_FROM: compass@info.cgcompass.com
-    AIRFLOW__CORE__XCOM_BACKEND : include.xcom_backend.CustomXComBackendJSON
+    AIRFLOW__CORE__XCOM_BACKEND : xcom_backend.CustomXComBackendJSON
 
     #AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER : "wasb-logging"
     #AIRFLOW__LOGGING__REMOTE_LOGGING : "True"

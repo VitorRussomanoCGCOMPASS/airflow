@@ -12,7 +12,7 @@ from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.providers.sendgrid.utils.emailer import send_email as _send_email
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
-from include.xcom_backend import HTMLXcom
+from xcom_backend import HTMLXcom
 from airflow.decorators import task
 
 

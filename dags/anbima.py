@@ -1,5 +1,4 @@
 import flask_api.models.anbima as anbima
-from flask_api.models.anbima.ima import TempProcessingIMA
 from operators.api import AnbimaOperator
 from operators.custom_sql import SQLCheckOperator, MSSQLOperator
 from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
@@ -36,6 +35,10 @@ with DAG(
 
     with TaskGroup(group_id="vna") as vna:
 
+        clean_stage_table = MSSQLOperator(
+            task_id="clean_stage_table", sql="DELETE FROM stage_anbima_vna"
+        )
+
         wait_vna = AnbimaSensor(
             task_id="wait_vna",
             request_params={
@@ -55,7 +58,7 @@ with DAG(
 
         store_vna = InsertSQLOperator(
             task_id="store_vna",
-            table=anbima.TempVNA,
+            table=anbima.StageVNA,
             values=fetch_vna.output,
         )
 
@@ -64,7 +67,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from temp_vna_anbima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_anbima_vna where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -75,13 +78,24 @@ with DAG(
 
         merge_vna_tables = MergeSQLOperator(
             task_id="merge_vna_tables",
-            source_table=anbima.TempVNA,
+            source_table=anbima.StageVNA,
             target_table=anbima.VNA,
         )
 
-        chain(wait_vna, fetch_vna, store_vna, check_vna_date, merge_vna_tables)
+        chain(
+            clean_stage_table,
+            wait_vna,
+            fetch_vna,
+            store_vna,
+            check_vna_date,
+            merge_vna_tables,
+        )
 
     with TaskGroup(group_id="debentures") as debentures:
+
+        clean_stage_table = MSSQLOperator(
+            task_id="clean_stage_table", sql="DELETE FROM stage_debentures"
+        )
 
         wait_debentures = AnbimaSensor(
             task_id="wait_debentures",
@@ -101,7 +115,7 @@ with DAG(
         )
         store_debentures = InsertSQLOperator(
             task_id="store_debentures",
-            table=anbima.TempDebentures,
+            table=anbima.StageDebentures,
             values=fetch_debentures.output,
         )
 
@@ -110,7 +124,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from temp_debentures where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_debentures where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -121,10 +135,11 @@ with DAG(
 
         merge_debentures_table = MergeSQLOperator(
             task_id="merge_debentures_table",
-            source_table=anbima.TempDebentures,
+            source_table=anbima.StageDebentures,
             target_table=anbima.Debentures,
         )
         chain(
+            clean_stage_table,
             wait_debentures,
             fetch_debentures,
             store_debentures,
@@ -132,6 +147,10 @@ with DAG(
             merge_debentures_table,
         )
     with TaskGroup(group_id="cricra") as cricra:
+
+        clean_stage_table = MSSQLOperator(
+            task_id="clean_stage_table", sql="DELETE FROM stage_anbima_cricra"
+        )
 
         wait_cricra = AnbimaSensor(
             task_id="wait_cricra",
@@ -152,7 +171,7 @@ with DAG(
 
         store_cricra = InsertSQLOperator(
             task_id="store_cricra",
-            table=anbima.TempCriCra,
+            table=anbima.StageCriCra,
             values=fetch_cricra.output,
         )
 
@@ -161,7 +180,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from temp_cricra_anbima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_anbima_vna where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -172,11 +191,12 @@ with DAG(
 
         merge_cricra_tables = MergeSQLOperator(
             task_id="merge_cricra_tables",
-            source_table=anbima.TempCriCra,
+            source_table=anbima.StageCriCra,
             target_table=anbima.CriCra,
         )
 
         chain(
+            clean_stage_table,
             wait_cricra,
             fetch_cricra,
             store_cricra,
@@ -185,6 +205,10 @@ with DAG(
         )
 
     with TaskGroup(group_id="ima") as ima:
+
+        clean_stage_table = MSSQLOperator(
+            task_id="clean_stage_table", sql="DELETE FROM stage_raw_anbima_ima"
+        )
 
         wait_ima = AnbimaSensor(
             task_id="wait_ima",
@@ -205,7 +229,7 @@ with DAG(
 
         store_ima = InsertSQLOperator(
             task_id="store_ima",
-            table=TempProcessingIMA,
+            table=anbima.StageRawIMA,
             values=fetch_ima.output,
         )
 
@@ -214,7 +238,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from temp_processing_ima_anbima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_raw_anbima_ima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -226,32 +250,33 @@ with DAG(
         split_ima = MSSQLOperator(
             task_id="split_ima",
             sql=""" 
-                INSERT INTO temp_ima_anbima(indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield)
+                INSERT INTO stage_anbima_ima(indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield)
                 SELECT indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield
-                FROM temp_processing_ima_anbima
+                FROM stage_raw_anbima_ima
                 """,
         )
         split_ima_to_components = MSSQLOperator(
             task_id="split_ima_to_components",
             sql=""" 
-            INSERT INTO temp_components_ima_anbima (indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade)
+            INSERT INTO stage_components_anbima_ima (indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade)
             SELECT indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade
-            FROM temp_processing_ima_anbima
+            FROM stage_raw_anbima_ima
                 """,
         )
 
         merge_ima_tables = MergeSQLOperator(
             task_id="merge_ima_tables",
-            source_table=anbima.TempIMA,
+            source_table=anbima.StageIMA,
             target_table=anbima.IMA,
         )
         merge_components_ima_tables = MergeSQLOperator(
             task_id="merge_ima_components_table",
-            source_table=anbima.TempComponentsIMA,
+            source_table=anbima.StageComponentsIMA,
             target_table=anbima.ComponentsIMA,
         )
 
         chain(
+            clean_stage_table,
             wait_ima,
             fetch_ima,
             store_ima,
