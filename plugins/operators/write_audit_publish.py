@@ -7,6 +7,7 @@ from airflow.models.xcom_arg import XComArg
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
+
 class InsertSQLOperator(BaseSQLOperator):
 
     template_fields: Sequence[str] = "values"
@@ -20,10 +21,14 @@ class InsertSQLOperator(BaseSQLOperator):
         database: str | None = None,
         table: str | DeclarativeMeta,
         values: dict[str, Any] | XComArg,
+        normalize: bool = True,
+        fast_executemany: bool = True,
         **kwargs,
     ) -> None:
         self.table = table
         self.values = values or {}
+        self.normalize = normalize
+        self.fast_executemany = fast_executemany
 
         hook_params = kwargs.pop("hook_params", {})
         kwargs["hook_params"] = {"database": database, **hook_params}
@@ -33,9 +38,26 @@ class InsertSQLOperator(BaseSQLOperator):
             **kwargs,
         )
 
+    @classmethod
+    def _normalize_dict(cls, dict):
+        from itertools import chain
+
+        # MAYBE THIS SHOULD COME FROM THE MODEL
+        all_keys = set(chain.from_iterable(dict))
+
+        for i in dict:
+            i.update((k, None) for k in all_keys - i.keys())
+
+        return dict
+
     def execute(self, context: Context) -> None:
         hook = self.get_db_hook()
-        engine = hook.get_sqlalchemy_engine()
+
+        engine_kwargs = {}
+        if self.fast_executemany:
+            engine_kwargs.update({"fast_executemany": True})
+
+        engine = hook.get_sqlalchemy_engine(engine_kwargs=engine_kwargs)
 
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
@@ -48,7 +70,11 @@ class InsertSQLOperator(BaseSQLOperator):
             self.table = Table(self.table, metadata, autoload_with=engine)
 
         with engine.connect() as conn:
-            conn.execute(self.table.insert().values(self.values))
+
+            if self.normalize:
+                self.values = self._normalize_dict(self.values)
+
+            conn.execute(self.table.insert(), self.values)
 
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
@@ -166,13 +192,13 @@ class MergeSQLOperator(BaseSQLOperator):
                 UPDATE SET 
                 """
 
-        cols  =cls.validate_columns(table, columns)
+        cols = cls.validate_columns(table, columns)
 
         f_col = next(cols)
         stmt += f"target.{f_col.name} =  source.{f_col.name}"
-        
+
         for col in cols:
-            stmt+= f", target.{col.name} =  source.{col.name}"
+            stmt += f", target.{col.name} =  source.{col.name}"
 
         return stmt
 
@@ -225,9 +251,7 @@ class MergeSQLOperator(BaseSQLOperator):
                 """
 
         if set_:
-            update_stmt = cls.generate_update_clause(
-                table=source_table, columns=set_
-            )
+            update_stmt = cls.generate_update_clause(table=source_table, columns=set_)
             sql += update_stmt
 
         return sql + " ;"

@@ -36,7 +36,6 @@ class CustomXComBackendJSON(BaseXCom):
     ):
 
         hook = WasbHook(wasb_conn_id="wasb-default")
-        
             
         with NamedTemporaryFile(mode="w") as tmp:
 

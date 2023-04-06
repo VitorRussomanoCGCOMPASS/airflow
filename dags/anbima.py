@@ -60,6 +60,7 @@ with DAG(
             task_id="store_vna",
             table=anbima.StageVNA,
             values=fetch_vna.output,
+            normalize=False
         )
 
         check_vna_date = SQLCheckOperator(
