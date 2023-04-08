@@ -1,6 +1,6 @@
-from typing import Any, Iterable, Sequence, Generator
+from typing import Any, Generator, Iterable, Sequence
 
-from sqlalchemy import Column, MetaData, Table
+from sqlalchemy import Column, Table
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
 from airflow.models.xcom_arg import XComArg
@@ -9,6 +9,48 @@ from airflow.utils.context import Context
 
 
 class InsertSQLOperator(BaseSQLOperator):
+
+    """
+    A custom operator that inserts data into a specific table in an SQL database.
+
+    Parameters
+    ----------
+    conn_id : str or None, optional
+        The connection ID to use to connect to the database. If None, the default connection
+        ID will be used. Default is None.
+    database : str or None, optional
+        The name of the database to use. If None, the default database for the connection
+        will be used. Default is None.
+    table : DeclarativeMeta or Table
+        The table object or metadata for the table to insert data into.
+    values : dict or XComArg, optional
+        The data to insert. Can be a single dictionary or a list of dictionaries.
+    normalize : bool, optional
+        If True, the dictionaries in the `values` argument will be normalized to include
+        any expected keys by the SQLALCHEMY model that are not present. If False, the
+        dictionaries will be inserted as is. Default is True.
+    engine_kwargs : dict or None, optional
+        Additional keyword arguments to pass to the SQLAlchemy engine when creating a
+        connection. If None, the default behaviour is to set `fast_executemany=True`.
+        Default is None.
+
+    Raises
+    ------
+    ValueError
+        If the `table` argument is not a `DeclarativeMeta` or `Table` object.
+    TypeError
+        If the `values` argument is not a dictionary or a list of dictionaries.
+
+    Notes
+    -----
+    If `fast_executemany` is set to True in `engine_kwargs`, the operator will use the
+    `executemany` method of the SQLAlchemy connection object to insert multiple rows
+    at once. This can significantly improve performance when inserting large amounts of
+    data. However, this feature is not supported by all database backends and can cause
+    errors in some cases. If you encounter errors when using `fast_executemany`, try
+    setting it to False.
+
+    """
 
     template_fields: Sequence[str] = "values"
     template_ext: Sequence[str] = ".json"
@@ -19,16 +61,16 @@ class InsertSQLOperator(BaseSQLOperator):
         *,
         conn_id: str | None = None,
         database: str | None = None,
-        table: str | DeclarativeMeta,
+        table: DeclarativeMeta | Table,
         values: dict[str, Any] | XComArg,
         normalize: bool = True,
-        fast_executemany: bool = True,
+        engine_kwargs: dict | None = None,
         **kwargs,
     ) -> None:
         self.table = table
         self.values = values or {}
         self.normalize = normalize
-        self.fast_executemany = fast_executemany
+        self.engine_kwargs = engine_kwargs or {}
 
         hook_params = kwargs.pop("hook_params", {})
         kwargs["hook_params"] = {"database": database, **hook_params}
@@ -39,40 +81,52 @@ class InsertSQLOperator(BaseSQLOperator):
         )
 
     @classmethod
-    def _normalize_dict(cls, dict):
-        from itertools import chain
+    def _normalize_dict(cls, dict, table):
+        """
+        Normalize a dictionary to ensure that it contains all expected keys for the SQL model.
 
-        # MAYBE THIS SHOULD COME FROM THE MODEL
-        all_keys = set(chain.from_iterable(dict))
+        If any expected key is missing from a dictionary, it will be added with a value of `None`.
 
-        for i in dict:
-            i.update((k, None) for k in all_keys - i.keys())
+        Parameters
+        ----------
+        dict : dict
+            The input dictionary to normalize.
+
+        table : Table
+            SQLALCHEMY model of the table
+
+        Returns
+        -------
+        dict
+            The normalized dictionary with all expected keys.
+
+        """
+
+        columns = set([col for col in table.columns.keys()])
+
+        for val in dict:
+            val.update((col, None) for col in columns - val.keys())
 
         return dict
 
     def execute(self, context: Context) -> None:
         hook = self.get_db_hook()
 
-        engine_kwargs = {}
-        if self.fast_executemany:
-            engine_kwargs.update({"fast_executemany": True})
+        if "fast_executemany" not in self.engine_kwargs:
+            self.engine_kwargs.update({"fast_executemany": True})
 
-        engine = hook.get_sqlalchemy_engine(engine_kwargs=engine_kwargs)
+        engine = hook.get_sqlalchemy_engine(engine_kwargs=self.engine_kwargs)
 
         if isinstance(self.table, DeclarativeMeta):
             # Transform into Table Object for consistency
             self.table = getattr(self.table, "__table__")
 
-        # This wont be needed anymore.
-        if not isinstance(self.table, Table):
-            metadata = MetaData()
-            metadata.reflect(bind=engine)
-            self.table = Table(self.table, metadata, autoload_with=engine)
-
         with engine.connect() as conn:
 
             if self.normalize:
-                self.values = self._normalize_dict(self.values)
+                self.log.debug("Normalizing values")
+
+                self.values = self._normalize_dict(self.values, self.table)
 
             conn.execute(self.table.insert(), self.values)
 
