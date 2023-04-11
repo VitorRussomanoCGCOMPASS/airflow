@@ -141,6 +141,8 @@ class SoftSQLCheckSensor(BaseSensorOperator):
     Optionally, we can set `fail_parameters`, so that we execute the same query given by `sql`, but with parameters that
     will hard fail the sensor, instead of making it sleep. This way it is possible to create ranges where it should
     instantly fail, or just wait for the next `poke_interval`.
+    Note that the sql with fail_parameters preceeds all other sqls.
+
 
     :param conn_id: The connection ID to use to connect to the database. If not provided, it will be inferred from
         the `hook_params`.
@@ -154,7 +156,7 @@ class SoftSQLCheckSensor(BaseSensorOperator):
     :param exponential_backoff: Whether the sensor should use exponential backoff when retrying the check.
     :type exponential_backoff: bool, optional
     :param soft_fail: Whether the sensor should soft fail or hard fail when the check fails.
-    :type soft_fail: bool, optional 
+    :type soft_fail: bool, optional
     :param parameters: A dictionary of parameters to render the SQL query with.
     :type parameters: dict, optional
     :param fail_parameters: A dictionary of parameters to render the SQL query with, to check for a hard failure.
@@ -164,6 +166,7 @@ class SoftSQLCheckSensor(BaseSensorOperator):
 
     :raises AirflowException: If the failure query returns zero rows.
     """
+
     template_fields: Sequence[str] = (
         "sql",
         "parameters",
@@ -233,9 +236,14 @@ class SoftSQLCheckSensor(BaseSensorOperator):
 
             if not records:
                 raise AirflowException(
-                    f"The failure query returned zero rows: {self.fail_sql}"
+                    f"The hard-fail query returned zero rows: {self.fail_sql}"
                 )
-            self.log.info("Failure sql statement succeded")
+            elif not all(bool(r) for r in records):
+                raise AirflowException(
+                    f"The hard-fail query failed. \nQuery:\n{self.fail_sql}\nResults:\n{records!s}"
+                )
+
+            self.log.info("Hard-fail criteria met.")
 
         self.log.info("Poking: %s", self.sql)
 
@@ -249,7 +257,7 @@ class SoftSQLCheckSensor(BaseSensorOperator):
             self.log.warning(f"\nQuery:\n{self.sql}\nResults:\n{records!s}")
             return False
 
-        self.log.info("Success.")
+        return bool(records[0])
 
     def render_template_fields(self, context, jinja_env=None) -> None:
         """Add the rendered 'params' to the context dictionary before running the templating"""

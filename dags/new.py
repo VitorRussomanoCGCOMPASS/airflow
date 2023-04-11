@@ -24,10 +24,9 @@ with DAG(
 
     soft = SoftSQLCheckSensor(
         task_id="funds_sql_sensor",
-        sql=""" 
-            WITH WorkTable(id) as ( SELECT britech_id FROM funds WHERE britech_id IN ({{params.ids}})) SELECT case when (SELECT COUNT(*) FROM funds_values WHERE "IdCarteira" IN (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
+        sql=""" SELECT CASE WHEN EXISTS ( select britech_id from funds where britech_id in ({{params.ids}})) then 1 else 0 end;""",
         hook_params={"database": "DB_Brasil"},
         do_xcom_push=False,
-        parameters={"ids": "1"},
-        fail_parameters={"ids": 49},
+        parameters={"ids": 49},
+        fail_parameters={"ids": 100},
     )
