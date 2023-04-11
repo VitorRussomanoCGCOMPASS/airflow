@@ -14,6 +14,7 @@ from airflow.providers.common.sql.sensors.sql import SqlSensor
 from airflow.utils.task_group import TaskGroup
 from include.utils.is_business_day import _is_business_day
 
+
 def splitdsformat(value) -> str:
     """Remove the Minutes, Seconds and miliseconds from date string.
     Eg. 2023-01-01T00:00:00 -> 2023-01-21"""
@@ -144,8 +145,6 @@ def _check_for_none(input) -> bool:
     if input:
         return True
     return False
-        
-
 
 
 default_args = {
@@ -212,14 +211,15 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "2023-04-05",
-                "DataFim": "2023-04-05",
+                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
 
         @task
         def process_xcom(ids):
             from itertools import chain
+
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         funds_sql_sensor = SqlSensor(
@@ -229,7 +229,7 @@ with DAG(
                 SELECT ( SELECT COUNT(*)
                 FROM funds_values
                 WHERE funds_id IN ( SELECT id FROM WorkTable) 
-	            AND date ='2023-04-05') =
+	            AND date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') =
 	   		    (SELECT COUNT(*) FROM WorkTable)
                 """,
             hook_params={"database": "userdata"},
@@ -240,7 +240,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "2023-04-05",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             output_path="/opt/airflow/data/britech/rentabilidade",
             filename="indices_{{ds}}.json",
@@ -252,7 +252,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": fetch_funds.output,
-                "dataReferencia": "2023-04-05",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             output_path="/opt/airflow/data/britech/rentabilidade",
             filename="funds_{{ds}}.json",
@@ -271,7 +271,7 @@ with DAG(
             ON a.britech_id = c.funds_id 
             WHERE britech_id = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}})
             AND date = inception_date 
-            OR  date ='2023-04-05'
+            OR  date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
             AND britech_id = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
@@ -343,6 +343,7 @@ with DAG(
         @task
         def process_xcom(ids):
             from itertools import chain
+
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         fetch_funds_return = BritechOperator(
@@ -350,7 +351,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": complete_fetch_funds.output,
-                "dataReferencia": "2023-04-05",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             output_path="/opt/airflow/data/britech/rentabilidade",
             filename="all_funds_{{ds}}.json",
@@ -369,7 +370,7 @@ with DAG(
             ON a.britech_id = c.funds_id 
             WHERE britech_id = any(array{{ti.xcom_pull(task_ids='internal-email-all-funds.process_xcom')}})
             AND date = inception_date 
-            OR date ='2023-04-05'
+            OR date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
             AND britech_id = any(array{{ti.xcom_pull(task_ids='internal-email-all-funds.process_xcom')}})
             )  
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
@@ -454,8 +455,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "2023-04-05",
-                "DataFim": "2023-04-05",
+                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
 
@@ -464,7 +465,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "2023-04-05",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             output_path="/opt/airflow/data/britech/rentabilidade",
             filename="indices_{{ds}}.json",
@@ -496,7 +497,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": fetch_funds.output,
-                "dataReferencia": "2023-04-05",
+                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
             output_path="/opt/airflow/data/britech/rentabilidade",
             filename="prev_funds_{{ds}}.json",
@@ -506,6 +507,7 @@ with DAG(
         @task
         def process_xcom(ids):
             from itertools import chain
+
             return tuple(map(int, list(chain(*ids))[-1].split(",")))
 
         fetch_complementary_funds_data = SQLQueryToLocalOperator(
@@ -554,8 +556,4 @@ with DAG(
     )
 
     chain(is_business_day, indices)
-    chain([indices,funds],render_template)
-
-
-
-
+    chain([indices, funds], render_template)
