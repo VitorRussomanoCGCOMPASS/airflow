@@ -1,15 +1,13 @@
 import json
+import os
 import uuid
 from tempfile import NamedTemporaryFile
 from typing import Any
+
+from airflow.exceptions import AirflowException
 from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
-import os
-from airflow.exceptions import AirflowException
-import pandas
-# We could also use ujson enconde_html_characters=True
-# We can also return an specific backend from the postgres/mssql operator.
-# We can also add wrappers to file share operator for instance.
+
 
 class HTMLXcom:
     def __init__(self, html_string: str, **kwargs) -> None:
@@ -36,18 +34,14 @@ class CustomXComBackendJSON(BaseXCom):
     ):
 
         hook = WasbHook(wasb_conn_id="wasb-default")
-            
-        with NamedTemporaryFile(mode="w") as tmp:
 
-            if isinstance(value, HTMLXcom):
+        with NamedTemporaryFile(mode="w") as tmp:
+            # FIXME : THIS IS TERRIBLE. BUT IDK H0W IS AIRFLOW IMPORTING SO THAT THERE IS NO MISMATHC.
+            if str(type(value)) == "<class 'xcom_backend.HTMLXcom'>":
                 tmp.write(value.html_string)
                 filename = "data_" + str(uuid.uuid4()) + ".html"
-
-            elif isinstance(value , pandas.DataFrame):
-                value.to_csv(tmp)
-                filename = "data_" + str(uuid.uuid4()) + '.csv'
-
             else:
+                print("jSON")
                 json.dump(value, tmp)
                 filename = "data_" + str(uuid.uuid4()) + ".json"
 
@@ -62,7 +56,7 @@ class CustomXComBackendJSON(BaseXCom):
                     CustomXComBackendJSON.MAX_FILE_SIZE_BYTES,
                     file_size,
                 )
-            
+
             blob_key = f"{run_id}/{task_id}/{filename}"
 
             # load the local  file into Azure Blob Storage
@@ -104,9 +98,6 @@ class CustomXComBackendJSON(BaseXCom):
             if reference_string.endswith(".html"):
                 HtmlFile = open(temp.name, "r", encoding="utf-8")
                 output = HtmlFile.read()
-            elif reference_string.endswith('.csv'):
-                output = pandas.read_csv(temp.name)
-                output = output.to_json(orient='records')
             else:
                 output = json.load(temp)
                 if isinstance(output, str):

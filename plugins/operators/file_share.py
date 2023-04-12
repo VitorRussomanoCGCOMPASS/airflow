@@ -29,9 +29,9 @@ class FileShareOperator(BaseOperator):
             result = conn.get_file_to_text(
                 self.share_name, self.directory_name, self.file_name
             )
-
             if result.name.endswith(".html"):
-                return HTMLXcom(result.content)
+                return HTMLXcom(html_string=result.content)
+
             return result.content
 
         raise FileNotFoundError("No file named %s", self.file_name)

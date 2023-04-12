@@ -31,4 +31,3 @@ INSERT INTO funds(britech_id, cnpj,apelido,inception_date, status , name , type)
 (9, 	'39800273000156'	,'Long Biased FIM', '2020-12-15','ativo',
 'COMPASS LONG BIASED FUNDO DE INVESTIMENTO MULTIMERCADO','variable')
  
-# INSERT INTO funds_values (cota, funds_id ,date)  (SELECT random() as cota ,9 as funds_id , * from generate_series(date '2022-01-01', '2023-02-01', '1 day') AS day)

@@ -1,0 +1,7 @@
+{
+  "name": "funds_values_checkpoint",
+  "data_asset_name": "declare @std_threshold float set @std_threshold = {{params.std}} EXEC dbo.NAMEOFSTORAGEPRODCEDURE @std_threshold",
+  "soft_expectations": [{ "std": 1 }],
+  "hard_expectations": [{ "std": 2 }],
+  "description": "We verify that the new values from funds_values stage table is under a parametrized number of standard deviations from its historic mean",
+}

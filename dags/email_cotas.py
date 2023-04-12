@@ -193,6 +193,7 @@ with DAG(
             do_xcom_push=False,
         )
 
+        # TODO :  THIS SHOULD ONLY FETCH ACTIVE FUNDS.
         fetch_funds = MSSQLOperator(
             task_id="fetch_funds",
             sql="devops_id_str.sql",
@@ -230,7 +231,12 @@ with DAG(
         funds_sql_sensor = SqlSensor(
             task_id="funds_sql_sensor",
             sql=""" 
-            WITH WorkTable(id) as ( SELECT britech_id FROM funds WHERE britech_id IN ({{params.ids}})) SELECT case when (SELECT COUNT(*) FROM funds_values WHERE "IdCarteira" IN (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
+            WITH WorkTable(id) as 
+            ( SELECT britech_id FROM funds WHERE britech_id IN ({{params.ids}})) 
+            SELECT case when (SELECT COUNT(*) FROM funds_values
+             WHERE "IdCarteira" IN 
+                (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') 
+                = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
             hook_params={"database": "DB_Brasil"},
             do_xcom_push=False,
             parameters={"ids": process_xcom_2.output},
@@ -348,7 +354,6 @@ with DAG(
             do_xcom_push=False,
         )  # type: ignore
 
-        # FIXME : THIS WILL NO LONGER RETURN A STRING.
         complete_fetch_funds = MSSQLOperator(
             task_id="complete_fetch_funds",
             sql="declare @date date set @date = '{{macros.template_tz.convert_ts(ds)}}' EXEC dbo.SP_ACTIVE_FUNDS @date",
@@ -373,24 +378,14 @@ with DAG(
         fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
             sql=""" 
-            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , "Data" , type 
-            FROM funds a 
-            JOIN funds_values c 
-            ON a.britech_id = c.IdCarteira 
-            WHERE britech_id in ({{params.ids}})
-            AND "Data" = inception_date 
-            OR "Data" ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id in ({{params.ids}})
-            )  
-            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY "Data") AS inception_cota
-            FROM Worktable)
-            SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
-            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio"
-            FROM lagged) as tb
-            WHERE "RentabilidadeInicio" !=0
+            
+            -- We need to fetch all active funds complementary data
+
+            SELECT *  SELECT britech_id, inception_date, apelido , "Data" , type 
+            FROM funds 
+            WHERE closure_date is null or closure_date >= '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
             """,
             results_to_dict=True,
-            parameters={"ids": processed_xcom},
         )
 
         merge = PythonOperator(
@@ -501,6 +496,7 @@ with DAG(
 
     with TaskGroup(group_id="funds") as funds:
 
+        # FIXME :  WE SHOULD jUST FETCH ACTIVE FUNDS.
         fetch_funds = MSSQLOperator(
             task_id="fetch_funds",
             sql="devops_id_str.sql",

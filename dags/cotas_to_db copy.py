@@ -110,7 +110,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_funds_values where Data != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_funds_values where cast(Data as date) != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') 
                 THEN 0
                 ELSE 1 
                 END
