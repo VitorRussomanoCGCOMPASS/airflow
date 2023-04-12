@@ -277,9 +277,9 @@ with DAG(
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
             FROM Worktable)
             SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
-            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio"
+            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio_OLD_OLD"
             FROM lagged) as tb
-            WHERE "RentabilidadeInicio" !=0
+            WHERE "RentabilidadeInicio_OLD_OLD" !=0
             """,
             do_xcom_push=True,
         )
@@ -376,9 +376,9 @@ with DAG(
             , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
             FROM Worktable)
             SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
-            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio"
+            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio_OLD"
             FROM lagged) as tb
-            WHERE "RentabilidadeInicio" !=0
+            WHERE "RentabilidadeInicio_OLD" !=0
             """,
             do_xcom_push=True,
         )
