@@ -265,21 +265,8 @@ with DAG(
             conn_id="postgres",
             database="userdata",
             sql=""" 
-            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date , type 
+            SELECT britech_id,  to_char(inception_date,'YYYY-MM-DD') inception_date, apelido  , type 
             FROM funds a 
-            JOIN funds_values c 
-            ON a.britech_id = c.funds_id 
-            WHERE britech_id = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}})
-            AND date = inception_date 
-            OR  date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id = any(array{{ti.xcom_pull(task_ids='external-email-subset-funds.process_xcom')}})
-            )  
-            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
-            FROM Worktable)
-            SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
-            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio_OLD_OLD"
-            FROM lagged) as tb
-            WHERE "RentabilidadeInicio_OLD_OLD" !=0
             """,
             do_xcom_push=True,
         )
@@ -364,21 +351,8 @@ with DAG(
             conn_id="postgres",
             database="userdata",
             sql=""" 
-            SELECT * FROM (WITH Worktable as (SELECT britech_id, inception_date, apelido  ,"CotaFechamento" , date , type 
-            FROM funds a 
-            JOIN funds_values c 
-            ON a.britech_id = c.funds_id 
-            WHERE britech_id = any(array{{ti.xcom_pull(task_ids='internal-email-all-funds.process_xcom')}})
-            AND date = inception_date 
-            OR date ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-            AND britech_id = any(array{{ti.xcom_pull(task_ids='internal-email-all-funds.process_xcom')}})
-            )  
-            , lagged as (SELECT *, LAG("CotaFechamento") OVER (PARTITION by apelido ORDER BY date) AS inception_cota
-            FROM Worktable)
-            SELECT britech_id , to_char(inception_date,'YYYY-MM-DD') inception_date , apelido, type,
-            COALESCE(("CotaFechamento" - inception_cota)/inception_cota ) * 100 AS "RentabilidadeInicio_OLD"
-            FROM lagged) as tb
-            WHERE "RentabilidadeInicio_OLD" !=0
+            SELECT britech_id,  to_char(inception_date,'YYYY-MM-DD') inception_date, apelido  , type FROM funds 
+
             """,
             do_xcom_push=True,
         )
