@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Any, Callable
 
 from hooks.anbima import AnbimaHook
 from hooks.britech import BritechHook
@@ -23,6 +23,8 @@ class BritechOperator(BaseOperator):
     :param request_params: params in the URL for a GET request (templated)
     :param endpoint: The relative part of the full url.
     :param json: payload to push
+
+
     """
 
     template_fields = (
@@ -43,6 +45,7 @@ class BritechOperator(BaseOperator):
         request_params: dict | None = None,
         endpoint: str,
         json: dict | None = None,
+        echo_params: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -55,8 +58,9 @@ class BritechOperator(BaseOperator):
         self.log_response = log_response
         self.data = data
         self.json = json
+        self.echo_params = echo_params
 
-    def execute(self, context: Context):
+    def execute(self, context: Context) -> tuple | Any:
         "Call an specific API endpoint and generate the response"
 
         hook = BritechHook(method="GET", conn_id=self.britech_conn_id)
@@ -79,6 +83,9 @@ class BritechOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
+        if self.echo_params:
+            return response.json(), self.request_params
+
         return response.json()
 
 
@@ -96,6 +103,7 @@ class AnbimaOperator(BaseOperator):
     :param request_params: params in the URL for a GET request (templated)
     :param endpoint: The relative part of the full url.
     """
+
     template_fields = (
         "data",
         "headers",

@@ -41,7 +41,6 @@ class CustomXComBackendJSON(BaseXCom):
                 tmp.write(value.html_string)
                 filename = "data_" + str(uuid.uuid4()) + ".html"
             else:
-                print("jSON")
                 json.dump(value, tmp)
                 filename = "data_" + str(uuid.uuid4()) + ".json"
 

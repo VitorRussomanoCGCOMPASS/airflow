@@ -81,33 +81,42 @@ class InsertSQLOperator(BaseSQLOperator):
         )
 
     @classmethod
-    def _normalize_dict(cls, dict, table):
+    def _normalize_dict(cls, values, table):
         """
-        Normalize a dictionary to ensure that it contains all expected keys for the SQL model.
+        Normalize all dictionaries in values to ensure that it contains all expected keys for the SQL model.
 
         If any expected key is missing from a dictionary, it will be added with a value of `None`.
 
         Parameters
         ----------
-        dict : dict
-            The input dictionary to normalize.
+        values : dict | List[dict]
+            Values to be normalized
 
         table : Table
             SQLALCHEMY model of the table
 
         Returns
         -------
-        dict
-            The normalized dictionary with all expected keys.
+        values
+            The normalized dictionary or dictionaries with all expected keys.
 
         """
 
         columns = set([col for col in table.columns.keys()])
 
-        for val in dict:
-            val.update((col, None) for col in columns - val.keys())
+        for val in values:
 
-        return dict
+            val.update((col, None) for col in columns - val.keys())
+            out = [val.pop(key) for key in val.keys() - columns]
+
+            # IN THIS OUT, WE CAN USE IT AS A LIST, ADD IF IT IS NOT THERE.
+
+        # maybe we look at the average len of the dictionaries, if now is smaller, then we can
+        # send an email?  idk
+
+        # TODO : WE CAN FIND THE MAX NUMBER OF CHANGES!
+
+        return values
 
     def execute(self, context: Context) -> None:
         hook = self.get_db_hook()
@@ -333,3 +342,6 @@ class MergeSQLOperator(BaseSQLOperator):
         hook.run(sql)
 
         self.log.info("Sucessfuly merged.")
+
+
+# se o 2 não der tudo, ele da um trigger no outro.
