@@ -7,7 +7,7 @@ from airflow.models.xcom_arg import XComArg
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
-
+# TODO : PROBABLY HAVE UNKNOWN, EEXCLUDE, INCLUDE, WARNING.
 class InsertSQLOperator(BaseSQLOperator):
 
     """
@@ -109,12 +109,9 @@ class InsertSQLOperator(BaseSQLOperator):
             val.update((col, None) for col in columns - val.keys())
             out = [val.pop(key) for key in val.keys() - columns]
 
-            # IN THIS OUT, WE CAN USE IT AS A LIST, ADD IF IT IS NOT THERE.
 
-        # maybe we look at the average len of the dictionaries, if now is smaller, then we can
-        # send an email?  idk
+        # TODO : We can get the maxset to report the columns that were dropped.
 
-        # TODO : WE CAN FIND THE MAX NUMBER OF CHANGES!
 
         return values
 

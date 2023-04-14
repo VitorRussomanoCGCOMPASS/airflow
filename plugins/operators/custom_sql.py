@@ -98,7 +98,8 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         processed_output = self._process_output(output, hook.descriptions)
 
         json_safe_output = json.dumps(processed_output, default=self.convert_types)
-
+        # TODO : WE CAN CALL FOR A SELF.WARPPER. SMTH LIKE THAT.
+        # TODO: OR WE CAN jUST EXTERNALLY DEFINE.
         return json_safe_output
 
     @abc.abstractmethod

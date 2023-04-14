@@ -8,7 +8,7 @@ from airflow.exceptions import AirflowException
 from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
 
-
+# TODO : WE CAN USE DATACLASSES TO CREATE HTML; YAML FILES IDEA.
 class HTMLXcom:
     def __init__(self, html_string: str, **kwargs) -> None:
         self.html_string = html_string
@@ -37,6 +37,7 @@ class CustomXComBackendJSON(BaseXCom):
 
         with NamedTemporaryFile(mode="w") as tmp:
             # FIXME : THIS IS TERRIBLE. BUT IDK H0W IS AIRFLOW IMPORTING SO THAT THERE IS NO MISMATHC.
+            
             if str(type(value)) == "<class 'xcom_backend.HTMLXcom'>":
                 tmp.write(value.html_string)
                 filename = "data_" + str(uuid.uuid4()) + ".html"
