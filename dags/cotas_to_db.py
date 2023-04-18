@@ -71,7 +71,7 @@ with DAG(
     def generate_status_request(**context):
         from itertools import chain
 
-        cnpjs = context["task_instance"].xcom_pull(task_ids="join")
+        cnpjs = context["task_instance"].xcom_pull(task_ids="fetching_cnpj.join")
 
         ds = context["task"].render_template(
             "{{macros.template_tz.convert_ts(ts)}}",
@@ -220,6 +220,14 @@ with DAG(
             conn_id="mssql-default",
         )
 
+        string_to_date = MSSQLOperator(
+            task_id="string_to_date",
+            database="DB_Brasil",
+            conn_id="mssql-default",
+            sql=""" 
+            update stage_funds_values 
+                SET Data = cast(Data as date) """)
+
         merge_tables = MergeSQLOperator(
             task_id="merge_tables",
             source_table=StageFundsValues,
@@ -257,6 +265,7 @@ with DAG(
         [pre_clean_temp_table, joined_data],
         push_data,
         [check_non_zero_pl_cota, check_date],
+        string_to_date,
         merge_tables,
         clean_temp_table,
     )
