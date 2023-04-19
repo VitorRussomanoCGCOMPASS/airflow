@@ -6,9 +6,17 @@ from decimal import Decimal
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from airflow.providers.common.sql.hooks.sql import (
-    fetch_all_handler, return_single_query_results)
+    fetch_all_handler,
+    return_single_query_results,
+)
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
+from typing import NoReturn
+from airflow.exceptions import (
+    AirflowException,
+    AirflowFailException,
+    AirflowSkipException,
+)
 
 
 class CustomBaseSQLOperator(BaseSQLOperator):
@@ -297,11 +305,13 @@ class SQLCheckOperator(BaseSQLOperator):
     first row is evaluated using python ``bool`` casting. If any of the
     values return ``False`` the check is failed and errors out.
     Note that Python bool casting evals the following as ``False``:
+    
     * ``False``
     * ``0``
     * Empty string (``""``)
     * Empty list (``[]``)
     * Empty dictionary or set (``{}``)
+    
     Given a query like ``SELECT COUNT(*) FROM foo``, it will fail only if
     the count ``== 0``. You can craft much more complex query that could,
     for instance, check that the table has the same number of rows as
@@ -313,10 +323,12 @@ class SQLCheckOperator(BaseSQLOperator):
     stop the critical path, preventing from
     publishing dubious data, or on the side and receive email alerts
     without stopping the progress of the DAG.
+    
     :param sql: the sql to be executed. (templated)
     :param conn_id: the connection ID used to connect to the database.
     :param database: name of database which overwrite the defined one in connection
     :param parameters: (optional) the parameters to render the SQL query with.
+    :param skip_on_failure: (optional) if true it skips downstream tasks instead of raising an exception.
     """
 
     template_fields: Sequence[str] = ("sql",)
@@ -334,6 +346,7 @@ class SQLCheckOperator(BaseSQLOperator):
         conn_id: str | None = None,
         database: str | None = None,
         parameters: Iterable | Mapping | None = None,
+        skip_on_failure: bool = False,
         **kwargs,
     ) -> None:
 
@@ -344,6 +357,7 @@ class SQLCheckOperator(BaseSQLOperator):
         super().__init__(database=database, **kwargs, conn_id=conn_id)
         self.sql = sql
         self.parameters = parameters
+        self.skip_on_failure = skip_on_failure
 
     def execute(self, context: Context):
         self.log.info("Executing SQL check: %s", self.sql)
@@ -360,6 +374,11 @@ class SQLCheckOperator(BaseSQLOperator):
 
         self.log.info("Success.")
 
+    def _raise_exception(self, exception_string: str) -> NoReturn:
 
+        if self.skip_on_failure:
+            raise AirflowSkipException(exception_string)
 
-
+        if self.retry_on_failure:
+            raise AirflowException(exception_string)
+        raise AirflowFailException(exception_string)
