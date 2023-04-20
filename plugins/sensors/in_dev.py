@@ -1,35 +1,10 @@
-import json
-from typing import Sequence, Iterable
+from typing import Sequence
 
 from airflow.exceptions import AirflowException
 from airflow.hooks.base import BaseHook
 from airflow.providers.common.sql.hooks.sql import DbApiHook
 from airflow.sensors.base import BaseSensorOperator
 from airflow.utils.context import Context
-
-
-class CheckpointSerializable(object):
-    def toJson(self):
-        return json.dumps(self.__dict__)
-
-    def __repr__(self):
-        return self.toJson()
-
-
-class Checkpoint(CheckpointSerializable):
-    def __init__(
-        self,
-        soft_expectations: Iterable[dict] | dict,
-        hard_expectations: Iterable[dict] | dict | None = None,
-        name: str | None = None,
-        data_asset_name: str | Iterable[str] | None = None,
-        description: str | None = None,
-    ):
-        self.name = name
-        self.data_asset_name = data_asset_name
-        self.soft_expectations = soft_expectations
-        self.hard_expectations = hard_expectations
-        self.description = description
 
 
 class Sensor(BaseSensorOperator):

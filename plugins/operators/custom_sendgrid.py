@@ -17,7 +17,7 @@ from airflow.utils.email import get_email_address_list
 
 AddressesType = Union[str, Iterable[str]]
 
-
+# FIXME : THIS IS FUCKED.
 class SendGridOperator(BaseOperator):
     """
 

@@ -17,6 +17,9 @@ from airflow.exceptions import (
     AirflowFailException,
     AirflowSkipException,
 )
+from t import SQLSource, MSSQLSource, PostgresSource
+from typing import Type
+
 
 
 class CustomBaseSQLOperator(BaseSQLOperator):
@@ -48,6 +51,7 @@ class CustomBaseSQLOperator(BaseSQLOperator):
 
     template_ext: Sequence[str] = (".sql", ".json")
     template_fields_renderers = {"sql": ".sql", "parameters": "json"}
+    WRAPPER: Type[SQLSource]
 
     def __init__(
         self,
@@ -105,10 +109,11 @@ class CustomBaseSQLOperator(BaseSQLOperator):
 
         processed_output = self._process_output(output, hook.descriptions)
 
-        json_safe_output = json.dumps(processed_output, default=self.convert_types)
+        # json_safe_output = json.dumps(processed_output, default=self.convert_types)
+
         # TODO : WE CAN CALL FOR A SELF.WARPPER. SMTH LIKE THAT.
         # TODO: OR WE CAN jUST EXTERNALLY DEFINE.
-        return json_safe_output
+        return self.WRAPPER(processed_output, self.stringify_dict)
 
     @abc.abstractmethod
     def process_output(
@@ -132,14 +137,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
         self, results: list[Any], descriptions: list[Sequence[Sequence] | None]
     ) -> list[Any]:
         ...
-
-    @abc.abstractmethod
-    def convert_type(self, value, **kwargs):
-        """Convert a value from DBAPI to output-friendly formats."""
-
-    def convert_types(self, row):
-        """Convert values from DBAPI to output-friendly formats."""
-        return self.convert_type(row, stringify_dict=self.stringify_dict)
 
     def render_template_fields(self, context, jinja_env=None) -> None:
         """Add the rendered 'params' to the context dictionary before running the templating"""
@@ -172,6 +169,9 @@ class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
 
 # FIXME : IF THERE IS NO OUTPUT. IT STILL TRIES TO LOOP
 class MSSQLOperator(CustomBaseSQLOperator):
+
+    WRAPPER = MSSQLSource
+
     def __init__(
         self, *, conn_id="mssql-default", database: str | None = None, **kwargs
     ) -> None:
@@ -181,24 +181,6 @@ class MSSQLOperator(CustomBaseSQLOperator):
             kwargs["hook_params"] = {"database": database, **hook_params}
 
         super().__init__(conn_id=conn_id, **kwargs)
-
-    @classmethod
-    def convert_type(cls, value, **kwargs) -> float | str | Any:
-        """
-        Takes a value from MSSQL, and converts it to a value that's safe for JSON
-
-        :param value: MSSQL Column value
-
-        Datetime, Date and Time are converted to ISO formatted strings.
-        """
-
-        if isinstance(value, Decimal):
-            return float(value)
-
-        if isinstance(value, (datetime.date, datetime.time)):
-            return value.isoformat()
-
-        return value
 
     @classmethod
     def process_output(
@@ -234,49 +216,13 @@ class MSSQLOperator(CustomBaseSQLOperator):
 
 
 class PostgresOperator(CustomBaseSQLOperator):
+
+    WRAPPER = PostgresSource
+
     def __init__(
         self, *, conn_id="postgres-default", database: str | None = None, **kwargs
     ) -> None:
         super().__init__(database=database, **kwargs, conn_id=conn_id)
-
-    @classmethod
-    def convert_type(cls, value, stringify_dict=True) -> float | str | Any:
-        """
-        Takes a value from Postgres, and converts it to a value that's safe for JSON
-
-        Timezone aware Datetime are converted to UTC seconds.
-        Unaware Datetime, Date and Time are converted to ISO formatted strings.
-
-        Decimals are converted to floats.
-        :param value: Postgres column value.
-        :param stringify_dict: Specify whether to convert dict to string.
-        """
-
-        if isinstance(value, datetime.datetime):
-            iso_format_value = value.isoformat()
-            if value.tzinfo is None:
-                return iso_format_value
-            return parser.parse(iso_format_value).float_timestamp  # type: ignore
-
-        if isinstance(value, datetime.date):
-            return value.isoformat()
-
-        if isinstance(value, datetime.time):
-            formatted_time = time.strptime(str(value), "%H:%M:%S")
-            time_delta = datetime.timedelta(
-                hours=formatted_time.tm_hour,
-                minutes=formatted_time.tm_min,
-                seconds=formatted_time.tm_sec,
-            )
-            return str(time_delta)
-
-        if stringify_dict and isinstance(value, dict):
-            return json.dumps(value)
-
-        if isinstance(value, Decimal):
-            return float(value)
-
-        return value
 
     @classmethod
     def process_output(
@@ -305,13 +251,13 @@ class SQLCheckOperator(BaseSQLOperator):
     first row is evaluated using python ``bool`` casting. If any of the
     values return ``False`` the check is failed and errors out.
     Note that Python bool casting evals the following as ``False``:
-    
+
     * ``False``
     * ``0``
     * Empty string (``""``)
     * Empty list (``[]``)
     * Empty dictionary or set (``{}``)
-    
+
     Given a query like ``SELECT COUNT(*) FROM foo``, it will fail only if
     the count ``== 0``. You can craft much more complex query that could,
     for instance, check that the table has the same number of rows as
@@ -323,7 +269,7 @@ class SQLCheckOperator(BaseSQLOperator):
     stop the critical path, preventing from
     publishing dubious data, or on the side and receive email alerts
     without stopping the progress of the DAG.
-    
+
     :param sql: the sql to be executed. (templated)
     :param conn_id: the connection ID used to connect to the database.
     :param database: name of database which overwrite the defined one in connection
@@ -382,3 +328,28 @@ class SQLCheckOperator(BaseSQLOperator):
         if self.retry_on_failure:
             raise AirflowException(exception_string)
         raise AirflowFailException(exception_string)
+
+# TODO :  SQLALCHEMY THAT IS A jOIN BETWEEN TABLES!
+
+class CheckOperatorV2(BaseSQLOperator):
+    # The idea is that it accepts either a checkpoint or a filepath in FIleShare.
+    #  then if fails and retries.
+
+    template_fields: Sequence[str] = ("sql",)
+    template_ext: Sequence[str] = (
+        ".hql",
+        ".sql",
+    )
+    template_fields_renderers = {"sql": "sql"}
+    ui_color = "#fff7e6"
+    
+    def __init__(
+        self,
+        *,
+        azure_fileshare_conn_id: str = "azure-fileshare-default",
+        share_name: str,
+        directory_name: str,
+        file_name: str,
+        **kwargs
+    ) -> None:
+        pass
