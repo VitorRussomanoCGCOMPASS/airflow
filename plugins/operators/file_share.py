@@ -2,7 +2,8 @@ from airflow.models import BaseOperator
 from airflow.providers.microsoft.azure.hooks.fileshare import AzureFileShareHook
 from airflow.utils.context import Context
 from typing import Any
-from xcom_backend import HTMLXcom
+import os
+from t import HTML, YAML, JSON
 
 
 class FileShareOperator(BaseOperator):
@@ -29,9 +30,17 @@ class FileShareOperator(BaseOperator):
             result = conn.get_file_to_text(
                 self.share_name, self.directory_name, self.file_name
             )
-            if result.name.endswith(".html"):
-                return HTMLXcom(html_string=result.content)
 
-            return result.content
+            file_extension = os.path.splitext(result.name)[1]
+
+            # We can also use subclasses, but this is fine for now.
+            if file_extension == ".html":
+                return HTML(html_string=result.content)
+            if file_extension == ".yaml" or ".yml":
+                return YAML(values=result.content)
+            if file_extension == ".json":
+                return JSON(values=result.content)
+
+            raise Exception("File extension not supported")
 
         raise FileNotFoundError("No file named %s", self.file_name)

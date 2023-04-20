@@ -56,11 +56,7 @@ def forward(date: str, days: int, fname="ANBIMA") -> str:
 
 #  FIXME: DATETIME IS NOT TIMEZONE AWARE. SO ON FRIDAYS LATE NIGHT, IT WILL SHOW AS NON BUSINESS DAY.
 
-def is_busday(ds: str, fname="ANBIMA") -> bool:
-
-    calendar = init_calendar(fname)
-    return numpy.is_busday([ds] , busdaycal = calendar)[-1].item()
 
 class Anbima(AirflowPlugin):
     name = "anbima_plugin"
-    macros = [forward, is_busday]
+    macros = [forward]

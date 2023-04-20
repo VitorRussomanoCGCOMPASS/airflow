@@ -9,48 +9,69 @@ import json
 import uuid
 
 
+
 class Input(ABC):
-    FILE_ENDING: str
+    FILE_EXTENSION: str | tuple
 
     @property
     def FILENAME(self) -> str:
-        return "data_" + str(uuid.uuid4()) + self.FILE_ENDING
+
+        FILE_EXTENSION = self.FILE_EXTENSION
+        
+        if isinstance(FILE_EXTENSION, tuple):
+            FILE_EXTENSION = FILE_EXTENSION[0]
+
+        return "data_" + str(uuid.uuid4()) + FILE_EXTENSION
 
     @abstractclassmethod
-    def save_to_file(self, file: _TemporaryFileWrapper):
+    def save_to_file(self, file: _TemporaryFileWrapper) -> None:
+        ...
+
+    @abstractclassmethod
+    def read_from_file(self, file: _TemporaryFileWrapper) -> None:
         ...
 
     @classmethod
-    def convert_type(cls):
+    def convert_type(cls) -> None:
         pass
 
 
 @dataclass
 class HTML(Input):
-    FILE_ENDING = ".html"
+    FILE_EXTENSION = ".html"
     html_string: Text
 
-    def save_to_file(self, file: _TemporaryFileWrapper):
+    def save_to_file(self, file: _TemporaryFileWrapper) -> None:
         file.write(self.html_string)
+
+    def read_from_file(self, file) -> str:
+        html_file = open(file.name, "r", encoding="utf-8")
+        return html_file.read()
 
 
 @dataclass
 class JSON(Input):
-    FILE_ENDING = ".json"
+    FILE_EXTENSION = ".json"
     values: Any
 
-    def save_to_file(self, file: _TemporaryFileWrapper):
+    def save_to_file(self, file: _TemporaryFileWrapper) -> None:
         json.dump(self.values, file)
+
+    def read_from_file(self, file):
+        return json.load(file)
 
 
 @dataclass
 class YAML(Input):
-    FILE_ENDING = ".yml"
+    FILE_EXTENSION = (".yml", ".yaml")
     values: Any
 
     # FIXME : SELF.VALUES WONT WORK HERE.
-    def save_to_file(self, file: _TemporaryFileWrapper):
+    def save_to_file(self, file: _TemporaryFileWrapper) -> None:
         yaml.dump(self.values, file)
+
+    def read_from_file(self, file):
+        return yaml.safe_load(file.name)
 
 
 @dataclass
@@ -59,19 +80,17 @@ class ExpectationFile(YAML):
 
 
 @dataclass
-class SQLSource(Input):
-    FILE_ENDING = ".json"
+class SQLSource(JSON):
     stringify_dict: bool
-    values: Any
 
     @abstractclassmethod
-    def convert_type(self, value, **kwargs):
+    def convert_type(self, value, **kwargs) -> None:
         """Convert a value from DBAPI to output-friendly formats."""
 
-    def convert_types(self, row):
+    def convert_types(self, row) -> None:
         return self.convert_type(row, stringify_dict=self.stringify_dict)
 
-    def save_to_file(self, file: _TemporaryFileWrapper):
+    def save_to_file(self, file: _TemporaryFileWrapper) -> None:
         json.dumps(self.values, default=self.convert_types)
 
 

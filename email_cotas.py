@@ -161,7 +161,7 @@ default_args = {
 
 
 with DAG(
-    "email_cotas_pl_vfinal",
+    "email_cotas_pl_evening",
     schedule=None,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql/"],
@@ -375,6 +375,7 @@ with DAG(
                 "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
             },
         )
+    
         fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
             sql=""" 
@@ -443,7 +444,7 @@ with DAG(
     chain(funds_sql_sensor, all_funds)
 
 with DAG(
-    "email_prev_cotas_pl",
+    "email_cotas_pl_prev",
     schedule=None,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
