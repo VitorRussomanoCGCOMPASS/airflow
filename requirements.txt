@@ -66,6 +66,7 @@ exceptiongroup==1.1.0
 flasgger==0.9.5
 Flask==2.2.2
 flask-api @ git+https://github.com/VitorRussomanoCGCOMPASS/flask_api.git@54ee5aa92d7f9f5c45cbba9fa46e93a3d36bcbf4
+wheels-airflow @ git+https://github.com/VitorRussomanoCGCOMPASS/wheels_airflow.git@d8cf33cb38088c931f00527e2fb48a4146b0e2d1
 Flask-AppBuilder==4.1.4
 Flask-Babel==2.0.0
 Flask-Caching==2.0.1

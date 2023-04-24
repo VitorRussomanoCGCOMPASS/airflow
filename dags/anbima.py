@@ -9,7 +9,6 @@ from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.python import ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
-from include.utils.is_business_day import _is_business_day
 
 default_args = {
     "owner": "airflow",
@@ -27,12 +26,12 @@ with DAG(
     schedule=None,
     default_args=default_args,
 ):
-    is_business_day = ShortCircuitOperator(
-        task_id="is_business_day",
-        python_callable=_is_business_day,
-        provide_context=True,
-    )
 
+    is_business_day = SQLCheckOperator(
+        task_id="check_for_hol",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        skip_on_failure=True,
+    )
     with TaskGroup(group_id="vna") as vna:
 
         clean_stage_table = MSSQLOperator(

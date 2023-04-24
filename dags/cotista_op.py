@@ -12,7 +12,6 @@ from airflow.operators.python import ShortCircuitOperator
 from airflow.providers.common.sql.operators.sql import BranchSQLOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
-from include.utils.is_business_day import _is_business_day
 
 default_args = {
     "owner": "airflow",
@@ -30,12 +29,11 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/"],
 ):
 
-    is_business_day = ShortCircuitOperator(
-        task_id="is_business_day",
-        python_callable=_is_business_day,
-        provide_context=True,
+    is_business_day = SQLCheckOperator(
+        task_id="check_for_hol",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        skip_on_failure=True,
     )
-
     with TaskGroup(group_id="new_cotista_op") as new_cotista_op:
         pre_clean_temp_table = MSSQLOperator(
             task_id="pre_clean_temp_table",

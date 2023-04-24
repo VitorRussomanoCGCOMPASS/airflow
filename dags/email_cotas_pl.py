@@ -5,7 +5,7 @@ from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
 from sensors.sql import SqlSensor
-from xcom_backend import HTMLXcom
+from FileObjects import HTML
 from airflow.exceptions import AirflowFailException
 from airflow import DAG
 from airflow.models.baseoperator import chain
@@ -60,7 +60,7 @@ def _render_template(
     indices_data: list[dict],
     complete_funds_data: list[dict],
     **context,
-) -> HTMLXcom:
+) -> HTML:
     """
     Renders the html template containing jinja formatting with the data.
 
@@ -87,7 +87,7 @@ def _render_template(
         {"indices": indices_data, "funds": complete_funds_data}
     )
 
-    return HTMLXcom(rendered_template)
+    return HTML(rendered_template)
 
 
 def _process_xcom(ids: list[list[str]]) -> str:
@@ -191,7 +191,7 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/mssql/"],
 ):
     is_business_day = SQLCheckOperator(
-        task_id="check_for_hol",
+        task_id="is_business_day",
         sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
         skip_on_failure=True,
     )
@@ -377,7 +377,7 @@ with DAG(
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
     is_business_day = SQLCheckOperator(
-        task_id="check_for_hol",
+        task_id="is_business_day",
         sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
         skip_on_failure=True,
     )
@@ -575,7 +575,7 @@ with DAG(
 ):
 
     is_business_day = SQLCheckOperator(
-        task_id="check_for_hol",
+        task_id="is_business_day",
         sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
         skip_on_failure=True,
     )
@@ -859,7 +859,7 @@ with DAG(
 ):
 
     is_business_day = SQLCheckOperator(
-        task_id="check_for_hol",
+        task_id="is_business_day",
         sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
         skip_on_failure=True,
     )
