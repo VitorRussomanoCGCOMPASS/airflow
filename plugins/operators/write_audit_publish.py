@@ -339,6 +339,3 @@ class MergeSQLOperator(BaseSQLOperator):
         hook.run(sql)
 
         self.log.info("Sucessfuly merged.")
-
-
-# se o 2 não der tudo, ele da um trigger no outro.

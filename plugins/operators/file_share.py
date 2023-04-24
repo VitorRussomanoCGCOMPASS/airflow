@@ -3,8 +3,7 @@ import os
 from airflow.models import BaseOperator
 from airflow.providers.microsoft.azure.hooks.fileshare import AzureFileShareHook
 from airflow.utils.context import Context
-from t import HTML, JSON, YAML
-
+from FileObjects import HTML, JSON, YAML
 
 class FileShareOperator(BaseOperator):
     """

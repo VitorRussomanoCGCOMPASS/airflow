@@ -1,25 +1,14 @@
 import abc
-import datetime
-import json
-import time
-from decimal import Decimal
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, NoReturn, Sequence, Type
 
+from FileObjects import MSSQLSource, PostgresSource, SQLSource
+
+from airflow.exceptions import (AirflowException, AirflowFailException,
+                                AirflowSkipException)
 from airflow.providers.common.sql.hooks.sql import (
-    fetch_all_handler,
-    return_single_query_results,
-)
+    fetch_all_handler, return_single_query_results)
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
-from typing import NoReturn
-from airflow.exceptions import (
-    AirflowException,
-    AirflowFailException,
-    AirflowSkipException,
-)
-from t import SQLSource, MSSQLSource, PostgresSource
-from typing import Type
-
 
 
 class CustomBaseSQLOperator(BaseSQLOperator):
@@ -111,8 +100,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
 
         # json_safe_output = json.dumps(processed_output, default=self.convert_types)
 
-        # TODO : WE CAN CALL FOR A SELF.WARPPER. SMTH LIKE THAT.
-        # TODO: OR WE CAN jUST EXTERNALLY DEFINE.
         return self.WRAPPER(processed_output, self.stringify_dict)
 
     @abc.abstractmethod
@@ -244,6 +231,90 @@ class PostgresOperator(CustomBaseSQLOperator):
         return results
 
 
+import json
+from dataclasses import dataclass, field
+from typing import Literal
+
+
+@dataclass
+class StoredProcedure:
+    sp: str
+    type: Literal["hard"] | Literal["soft"]
+    schema: str = ".dbo"
+    params: list[dict] | dict | None = None
+    description: str | None = None
+
+    built_stored_procedure: str = field(init=False)
+    result: bool | None = field(init=False)
+
+    def __post_init__(self):
+        self.result = None
+        self.built_stored_procedure = self._parse_stored_procedure(
+            self.sp, self.params, self.schema
+        )
+
+    @staticmethod
+    def _parse_stored_procedure(
+        sp: str, params: list[dict] | dict | None, schema: str
+    ) -> str:
+        # TODO : WE PARSE THE STORED PROCEUDRES STATEMNT
+        return "a"
+
+
+@dataclass
+class Checkpoint:
+    checkpoint: str
+    validations: list[StoredProcedure] | StoredProcedure | str
+    description: str | None = None
+
+    def __repr__(self) -> str:
+        return f"{self.checkpoint} "
+
+
+class CheckV2(BaseSQLOperator):
+    # checkpoint can be either a path or the obj.
+    template_fields: Sequence[str] = "checkpoint"
+    template_ext: Sequence[str] = ".json"
+    template_fields_renderers = {"checkpoint": ".json"}
+
+    def __init__(
+        self,
+        *,
+        checkpoint: Checkpoint | str,
+        conn_id: str | None = None,
+        database: str | None = None,
+        skip_on_failure: bool = False,
+        **kwargs,
+    ) -> None:
+
+        if database is not None:
+            hook_params = kwargs.pop("hook_params", {})
+            kwargs["hook_params"] = {"database": database, **hook_params}
+
+        super().__init__(database=database, **kwargs, conn_id=conn_id)
+        self.skip_on_failure = skip_on_failure
+        self.checkpoint = checkpoint
+
+    # One checkpoint has multiple validations
+    # How can we generate the results and get the type of the validation
+    def execute(self, **context):
+
+        if isinstance(self.checkpoint, str):
+            checkpoint = json.loads(self.checkpoint)
+            self.checkpoint = Checkpoint(**checkpoint)
+
+        self.log.info("Executing Checkpoint : %s ", self.checkpoint.checkpoint)
+
+        # WE ACCESS THE PARSED STORED PROCEDURE
+        # WE EXECUTE THEM
+        # WE STORE THE RESULTS
+
+        # ACTUALLY, WE CAN jUST STORE THE RESULTS IN THE OBjECT.
+
+        if isinstance(self.checkpoint.validations, StoredProcedure):
+            pass
+
+
 class SQLCheckOperator(BaseSQLOperator):
     """
     Performs checks against a db. The ``SQLCheckOperator`` expects
@@ -305,7 +376,7 @@ class SQLCheckOperator(BaseSQLOperator):
         self.parameters = parameters
         self.skip_on_failure = skip_on_failure
 
-    def execute(self, context: Context):
+    def execute(self, context: Context) -> None:
         self.log.info("Executing SQL check: %s", self.sql)
         records = self.get_db_hook().get_first(self.sql, self.parameters)
 
@@ -328,28 +399,3 @@ class SQLCheckOperator(BaseSQLOperator):
         if self.retry_on_failure:
             raise AirflowException(exception_string)
         raise AirflowFailException(exception_string)
-
-# TODO :  SQLALCHEMY THAT IS A jOIN BETWEEN TABLES!
-
-class CheckOperatorV2(BaseSQLOperator):
-    # The idea is that it accepts either a checkpoint or a filepath in FIleShare.
-    #  then if fails and retries.
-
-    template_fields: Sequence[str] = ("sql",)
-    template_ext: Sequence[str] = (
-        ".hql",
-        ".sql",
-    )
-    template_fields_renderers = {"sql": "sql"}
-    ui_color = "#fff7e6"
-    
-    def __init__(
-        self,
-        *,
-        azure_fileshare_conn_id: str = "azure-fileshare-default",
-        share_name: str,
-        directory_name: str,
-        file_name: str,
-        **kwargs
-    ) -> None:
-        pass
