@@ -14,7 +14,6 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
-
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
@@ -29,30 +28,21 @@ default_args = {
 }
 
 
-def splitdsformat(value) -> str:
-    """Remove the Minutes, Seconds and miliseconds from date string.
-    Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
-    return value.split("T")[0]
+def _process_xcom(ids: list[list[str]]) -> str:
+    """
+    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => '10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9'
 
+    Parameters
+    ----------
+    ids : str
+        str formatted list of ids
 
-def percentformat(value) -> str:
-    """Format float to str with percentage format"""
+    Returns
+    -------
+    str
 
-    if isinstance(value, str):
-        return value
-    return f"{value/100:.2%}".replace(".", ",")
-
-
-def currencyformat(value) -> str:
-    """Format float to str  with currency format"""
-
-    return f"{value:09,.0f}".replace("R$-", "-R$").replace(",", ".")
-
-
-def valueformat(value) -> str:
-    """Format float replacing '.' with ','"""
-
-    return f"{value:0,.8f}".replace(".", ",")
+    """
+    return ids[-1][-1]
 
 
 def _render_template(
@@ -88,23 +78,6 @@ def _render_template(
     )
 
     return HTML(rendered_template)
-
-
-def _process_xcom(ids: list[list[str]]) -> str:
-    """
-    e.g. [["10,14,17,2,3,30,31,32,35,42,43,49,50,51,9"]] => '10, 14, 17, 2, 3, 30, 31, 32, 35, 42, 43, 49, 50, 51, 9'
-
-    Parameters
-    ----------
-    ids : str
-        str formatted list of ids
-
-    Returns
-    -------
-    str
-
-    """
-    return ids[-1][-1]
 
 
 def _merge(
@@ -154,14 +127,30 @@ def _merge(
     return data.to_json(orient="records")
 
 
-def _merge_d1_d2_funds(funds_d1: list[dict], funds_d2: list[dict] | None = None) -> str:
-    import pandas
+def splitdsformat(value) -> str:
+    """Remove the Minutes, Seconds and miliseconds from date string.
+    Eg. 2023-01-01T00:00:00 -> 2023-01-11"""
+    return value.split("T")[0]
 
-    if not funds_d2:
-        return pandas.DataFrame(funds_d1).to_json(orient="records")
 
-    data = pandas.merge(pandas.DataFrame(funds_d1), pandas.DataFrame(funds_d2))
-    return data.to_json(orient="records")
+def percentformat(value) -> str:
+    """Format float to str with percentage format"""
+
+    if isinstance(value, str):
+        return value
+    return f"{value/100:.2%}".replace(".", ",")
+
+
+def currencyformat(value) -> str:
+    """Format float to str  with currency format"""
+
+    return f"{value:09,.0f}".replace("R$-", "-R$").replace(",", ".")
+
+
+def valueformat(value) -> str:
+    """Format float replacing '.' with ','"""
+
+    return f"{value:0,.8f}".replace(".", ",")
 
 
 def _is_not_empty(list_ids: list) -> bool:
@@ -186,115 +175,74 @@ def _raise_if_empty(list_ids: list) -> bool | None:
 
 with DAG(
     "email_cotas_pl_am",
-    schedule=None,
+    schedule='0 9 * * MON-FRI',
+    catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql/"],
 ):
+
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
     with TaskGroup(group_id="funds") as funds:
-        with TaskGroup(group_id="d1_funds") as d1_funds:
-            funds_sql_sensor = SqlSensor(
-                task_id="funds_sql_sensor",
-                sql=""" 
-                WITH WorkTable(id) as 
-                ( SELECT id FROM devops WHERE type='funds' and dag='email_cotas_pl_am') 
-                SELECT case when (SELECT COUNT(*) FROM funds_values
-                WHERE "IdCarteira" IN 
-                    (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') 
-                    = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
-                do_xcom_push=False,
-            )
+        funds_sql_sensor = SqlSensor(
+            task_id="funds_sql_sensor",
+            sql=""" 
+            WITH WorkTable(id) as 
+            ( SELECT id FROM devops WHERE type='funds' and dag='email_cotas_pl_am') 
+            SELECT case when (SELECT COUNT(*) FROM funds_values
+            WHERE "IdCarteira" IN 
+                (SELECT id FROM WorkTable )AND Data ='{{macros.template_tz.convert_ts(data_interval_start)}}') 
+                = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
+            do_xcom_push=False,
+        )
 
-            select_d1_funds = MSSQLOperator(
-                task_id="select_d1_funds",
-                sql=""" 
-                SELECT id, CotaFechamento , Data FROM devops
-                JOIN funds_values 
-                ON id = IdCarteira 
-                WHERE 
-                type='funds' and dag='external_cotas_pl'  and Data='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-                 """,
-            )
-
-            fetch_funds_return_d1 = BritechOperator(
-                task_id="fetch_funds_return_d1",
-                endpoint="/Fundo/BuscaRentabilidadeFundos",
-                request_params={
-                    "idCarteiras": select_d1_funds.output,
-                    "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                },
-            )
-            chain(funds_sql_sensor, select_d1_funds, fetch_funds_return_d1)
-
-        with TaskGroup(group_id="d2_funds") as d2_funds:
-            select_d2_funds = MSSQLOperator(
-                task_id="select_d2_funds",
-                sql=""" 
-            SELECT id, CotaFechamento , Data FROM devops  
+        select_d1_funds = MSSQLOperator(
+            task_id="select_d1_funds",
+            sql=""" 
+            SELECT id, CotaFechamento , Data FROM devops
             JOIN funds_values 
             ON id = IdCarteira 
-            where type='funds' and dag='external_cotas_pl'  and Data='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-2)}}'  
-            AND id NOT IN 
-            (SELECT id from devops join funds_values on id=IdCarteira where type='funds' and dag='external_cotas_pl' and data='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}' )
-            """,
-                do_xcom_push=True,
-            )
+            WHERE 
+            type='funds' and dag='external_cotas_pl'  and Data='{{macros.template_tz.convert_ts(data_interval_start)}}'
+             """,
+        )
 
-            if_d2_funds = ShortCircuitOperator(
-                task_id="if_not_all_funds",
-                python_callable=_is_not_empty,
-                op_kwargs={"list_ids": select_d2_funds.output},
-                do_xcom_push=False,
-                ignore_downstream_trigger_rules=False,
-            )
-
-            fetch_funds_return_d2 = BritechOperator(
-                task_id="fetch_funds_return_d2",
-                endpoint="/Fundo/BuscaRentabilidadeFundos",
-                request_params={
-                    "idCarteiras": select_d2_funds.output,
-                    "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                },
-            )
-            chain(select_d2_funds, if_d2_funds, fetch_funds_return_d2)
-
-        merge_d1_d2_funds = PythonOperator(
-            task_id="merge_d1_d2_funds",
-            python_callable=_merge_d1_d2_funds,
-            do_xcom_push=True,
-            op_kwargs={
-                "funds_d1": fetch_funds_return_d1.output,
-                "funds_d2": fetch_funds_return_d2.output,
+        fetch_funds_return_d1 = BritechOperator(
+            task_id="fetch_funds_return_d1",
+            endpoint="/Fundo/BuscaRentabilidadeFundos",
+            request_params={
+                "idCarteiras": select_d1_funds.output,
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
-            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
 
         fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
             sql=""" 
-                SELECT britech_id, inception_date, apelido  , type 
-                FROM funds where britech_id in (SELECT ID from devops where dag='external_cotas_pl' AND type='funds')
-                """,
+            SELECT britech_id, inception_date, apelido  , type 
+            FROM funds where britech_id in (SELECT ID from devops where dag='external_cotas_pl' AND type='funds')
+            """,
             results_to_dict=True,
         )
-
         merge_and_filter = PythonOperator(
             task_id="merge_and_filter",
             python_callable=_merge,
             op_kwargs={
-                "funds_data": merge_d1_d2_funds.output,
+                "funds_data": fetch_funds_return_d1.output,
                 "complementary_data": fetch_complementary_funds_data.output,
                 "filter": True,
             },
         )
-
-        chain([merge_d1_d2_funds, fetch_complementary_funds_data], merge_and_filter)
-
+        chain(
+            funds_sql_sensor,
+            select_d1_funds,
+            [fetch_funds_return_d1, fetch_complementary_funds_data],
+            merge_and_filter,
+        )
     with TaskGroup(group_id="indices") as indices:
         fetch_indices = MSSQLOperator(
             task_id="fetch_indices",
@@ -318,8 +266,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataInicio": "{{macros.template_tz.convert_ts(data_interval_start)}}",
+                "DataFim": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
             do_xcom_push=False,
         )
@@ -329,11 +277,10 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
         chain(fetch_indices, check_for_indices, indices_sensor, fetch_indices_return)
-
     fetch_template = FileShareOperator(
         task_id="fetch_template",
         azure_fileshare_conn_id="azure-fileshare-default",
@@ -343,7 +290,6 @@ with DAG(
         do_xcom_push=True,
     )
 
-    # TODO : NEW TEMPLATE.
     render_template = PythonOperator(
         task_id="render_template",
         python_callable=_render_template,
@@ -359,26 +305,26 @@ with DAG(
     send_email = SendGridOperator(
         task_id="send_email",
         to="Vitor.Ibanez@cgcompass.com",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         parameters={
             "html_content": render_template.output,
         },
     )
 
     chain(is_business_day, [indices, funds])
-    chain(funds_sql_sensor, select_d2_funds)
     chain(is_business_day, fetch_template, render_template, send_email)
 
 
 with DAG(
     "email_cotas_pl_pm",
-    schedule=None,
+    schedule='0 16 * * MON-FRI',
+    catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}s') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -404,8 +350,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataInicio": "{{macros.template_tz.convert_ts(data_interval_start)}}",
+                "DataFim": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
             do_xcom_push=False,
         )
@@ -415,7 +361,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
         chain(fetch_indices, check_for_indices, indices_sensor, fetch_indices_return)
@@ -428,97 +374,38 @@ with DAG(
                 ( SELECT id FROM devops WHERE type='funds' and dag='external_cotas_pl')
                 SELECT case when (SELECT COUNT(*) FROM funds_values
                 WHERE "IdCarteira" IN 
-                    (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') 
+                    (SELECT id FROM WorkTable )AND Data ='{{macros.template_tz.convert_ts(data_interval_start)}}') 
                     >= {{params.percentage}}  * (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end;
                     """,
             parameters={"percentage": 0.6},
         )
 
-        with TaskGroup(group_id="d1_funds") as d1_funds:
-            select_d1_funds = MSSQLOperator(
-                task_id="select_d1_funds",
-                sql=""" 
-                SELECT id, CotaFechamento , Data FROM devops
-                JOIN funds_values 
-                ON id = IdCarteira 
-                WHERE 
-                type='funds' and dag='external_cotas_pl'  and Data='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
-                 """,
-            )
-
-            fetch_funds_return_d1 = BritechOperator(
-                task_id="fetch_funds_return_d1",
-                endpoint="/Fundo/BuscaRentabilidadeFundos",
-                request_params={
-                    "idCarteiras": select_d1_funds.output,
-                    "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                },
-            )
-            chain(select_d1_funds, fetch_funds_return_d1)
-
-        with TaskGroup(group_id="d2_funds") as d2_funds:
-            select_d2_funds = MSSQLOperator(
-                task_id="select_d2_funds",
-                sql=""" 
-            SELECT id, CotaFechamento , Data FROM devops  
+        select_d1_funds = MSSQLOperator(
+            task_id="select_d1_funds",
+            sql=""" 
+            SELECT id, CotaFechamento , Data FROM devops
             JOIN funds_values 
             ON id = IdCarteira 
-            where type='funds' and dag='external_cotas_pl'  and Data='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'  
-            AND id NOT IN 
-            (SELECT id from devops join funds_values on id=IdCarteira where type='funds' 
-            and dag='external_cotas_pl' and data='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}' )
-        
-            """,
-                do_xcom_push=True,
-            )
+            WHERE 
+            type='funds' and dag='external_cotas_pl'  and Data='{{macros.template_tz.convert_ts(data_interval_start)}}'
+             """,
+        )
 
-            if_d2_funds = ShortCircuitOperator(
-                task_id="if_d2_funds",
-                python_callable=_is_not_empty,
-                op_kwargs={"list_ids": select_d2_funds.output},
-                do_xcom_push=False,
-                ignore_downstream_trigger_rules=False,
-            )
-
-            fetch_funds_return_d2 = BritechOperator(
-                task_id="fetch_funds_return_d2",
-                endpoint="/Fundo/BuscaRentabilidadeFundos",
-                request_params={
-                    "idCarteiras": select_d2_funds.output,
-                    "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                },
-            )
-
-            trigger_evening_cotas_pl = TriggerDagRunOperator(
-                task_id="trigger_evening_cotas_pl",
-                trigger_dag_id="email_cotas_pl_evening",
-                execution_date="{{ds}}",
-            )
-
-            chain(
-                select_d2_funds,
-                if_d2_funds,
-                [fetch_funds_return_d2, trigger_evening_cotas_pl],
-            )
-        chain(percentage_of_funds_sensor, [d1_funds, d2_funds])
-
-        merge_d1_d2_funds = PythonOperator(
-            task_id="merge_d1_d2_funds",
-            python_callable=_merge_d1_d2_funds,
-            do_xcom_push=True,
-            op_kwargs={
-                "funds_d1": fetch_funds_return_d1.output,
-                "funds_d2": fetch_funds_return_d2.output,
+        fetch_funds_return_d1 = BritechOperator(
+            task_id="fetch_funds_return_d1",
+            endpoint="/Fundo/BuscaRentabilidadeFundos",
+            request_params={
+                "idCarteiras": select_d1_funds.output,
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
-            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
 
         fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
             sql=""" 
-                SELECT britech_id, inception_date, apelido  , type 
-                FROM funds where britech_id in (SELECT ID from devops where dag='external_cotas_pl' AND type='funds')
-                """,
+            SELECT britech_id, inception_date, apelido  , type 
+            FROM funds where britech_id in (SELECT ID from devops where dag='external_cotas_pl' AND type='funds')
+            """,
             results_to_dict=True,
         )
 
@@ -526,13 +413,33 @@ with DAG(
             task_id="merge_and_filter",
             python_callable=_merge,
             op_kwargs={
-                "funds_data": merge_d1_d2_funds.output,
+                "funds_data": fetch_funds_return_d1.output,
                 "complementary_data": fetch_complementary_funds_data.output,
                 "filter": True,
             },
         )
-        chain([merge_d1_d2_funds, fetch_complementary_funds_data], merge_and_filter)
 
+        chain(
+            percentage_of_funds_sensor,
+            select_d1_funds,
+            [fetch_funds_return_d1, fetch_complementary_funds_data],
+            merge_and_filter,
+        )
+        with TaskGroup("Trigger-evening") as trigger_evening:
+            check_if_all_d1 = SQLCheckOperator(
+                task_id="check_if_all_d1",
+                sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
+                skip_on_failure=True,
+            )
+
+            trigger_evening_cotas_pl = TriggerDagRunOperator(
+                task_id="trigger_evening_cotas_pl",
+                trigger_dag_id="email_cotas_pl_evening",
+                execution_date="{{ds}}",
+            )
+            chain(check_if_all_d1, trigger_evening_cotas_pl)
+
+    chain(select_d1_funds, trigger_evening)
     fetch_template = FileShareOperator(
         task_id="fetch_template",
         azure_fileshare_conn_id="azure-fileshare-default",
@@ -558,7 +465,7 @@ with DAG(
     send_email = SendGridOperator(
         task_id="send_email",
         to="Vitor.Ibanez@cgcompass.com",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         parameters={
             "html_content": render_template.output,
         },
@@ -569,14 +476,15 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_prev",
-    schedule=None,
+    catchup=False,
+    schedule='0 9 * * MON-FRI',
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{data_interval_start}}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -603,8 +511,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataInicio": "{{macros.template_tz.convert_ts(data_interval_start)}}",
+                "DataFim": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
             do_xcom_push=False,
         )
@@ -614,7 +522,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
 
@@ -644,7 +552,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": fetch_funds.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
 
@@ -711,7 +619,8 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_evening",
-    schedule=None,
+    schedule='0 18 * * MON-FRI',
+    catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
@@ -738,8 +647,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataInicio": "{{macros.template_tz.convert_ts(data_interval_start)}}",
+                "DataFim": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
             do_xcom_push=False,
         )
@@ -749,7 +658,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
 
@@ -763,7 +672,7 @@ with DAG(
                 ( SELECT id FROM devops WHERE type='funds' and dag='external_cotas_pl') 
                 SELECT case when (SELECT COUNT(*) FROM funds_values
                 WHERE "IdCarteira" IN 
-                    (SELECT id FROM WorkTable )AND Data ='{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') 
+                    (SELECT id FROM WorkTable )AND Data ='{{macros.template_tz.convert_ts(data_interval_start)}}') 
                     = (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end; """,
             do_xcom_push=False,
         )
@@ -771,7 +680,7 @@ with DAG(
         select_funds = MSSQLOperator(
             task_id="select_funds",
             sql=""" 
-                SELECT britech_id FROM funds  where closure_date >= '{{macros.template_tz.convert_ts(ds)}}' or closure_date is null
+                SELECT britech_id FROM funds  where closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}' or closure_date is null
                  """,
             do_xcom_push=True,
         )
@@ -787,7 +696,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": select_funds.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
 
@@ -853,14 +762,15 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_evening_complete",
-    schedule=None,
+    schedule='0 18 * * MON-FRI',
+    catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{data_interval_start}}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -868,13 +778,13 @@ with DAG(
 
         active_funds_sensor = SqlSensor(
             task_id="complete_funds_sql_sensor",
-            sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(ds)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
+            sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
             do_xcom_push=False,
         )  # type: ignore
 
         select_active_funds = MSSQLOperator(
             task_id="complete_fetch_funds",
-            sql="declare @date date set @date = '{{macros.template_tz.convert_ts(ds)}}' EXEC dbo.SP_ACTIVE_FUNDS @date",
+            sql="declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_ACTIVE_FUNDS @date",
         )
 
         check_for_funds = PythonOperator(
@@ -889,7 +799,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
                 "idCarteiras": select_active_funds.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
 
@@ -898,7 +808,7 @@ with DAG(
             sql=""" 
             SELECT *  SELECT britech_id, inception_date, apelido , "Data" , type 
             FROM funds 
-            WHERE closure_date is null or closure_date >= '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'
+            WHERE closure_date is null or closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}'
             """,
             results_to_dict=True,
         )
@@ -943,8 +853,8 @@ with DAG(
             task_id="indice_sensor",
             request_params={
                 "idIndice": fetch_indices.output,
-                "DataInicio": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
-                "DataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "DataInicio": "{{macros.template_tz.convert_ts(data_interval_start)}}",
+                "DataFim": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
             do_xcom_push=False,
         )
@@ -954,7 +864,7 @@ with DAG(
             endpoint="/Fundo/BuscaRentabilidadeIndicesMercado",
             request_params={
                 "idIndices": fetch_indices.output,
-                "dataReferencia": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
         chain(fetch_indices, check_for_indices, indices_sensor, fetch_indices_return)
@@ -980,10 +890,11 @@ with DAG(
     send_email = SendGridOperator(
         task_id="send_email",
         to="Vitor.Ibanez@cgcompass.com",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         parameters={
             "html_content": render_template.output,
         },
     )
     chain(is_business_day, [indices, all_funds])
     chain(is_business_day, fetch_template, render_template, send_email)
+    

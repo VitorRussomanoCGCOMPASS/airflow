@@ -33,8 +33,6 @@ class CustomXComBackend(BaseXCom):
     ) -> None:
 
         hook = WasbHook(wasb_conn_id="wasb-default")
-        print("checkppoint 1 ")
-        print(type(value))
 
         with NamedTemporaryFile(mode="w") as tmp:
             # Defaults to JSON
@@ -44,7 +42,7 @@ class CustomXComBackend(BaseXCom):
             if not isinstance(value, Input):
                 value = JSON(values=value)
                 enforced_json = True
-                logging.info("Defaulted to JSON backend handler")
+                logging.info("Defaulted to SON backend handler")
 
             # Explicit point of failure
             try:
@@ -111,7 +109,6 @@ class CustomXComBackend(BaseXCom):
                     file_extension == subclass.FILE_EXTENSION
                     or file_extension in subclass.FILE_EXTENSION
                 ):
-                    print("subclass %s", subclass)
 
                     read_from_file: Callable | None = getattr(
                         subclass, "read_from_file", None

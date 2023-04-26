@@ -1,7 +1,7 @@
 from typing import Union
+
 import numpy
-from pendulum.tz import timezone
-import datetime
+
 from airflow.plugins_manager import AirflowPlugin
 
 
@@ -34,6 +34,10 @@ def init_calendar(
 
     return numpy.busdaycalendar(weekmask=weekmask, holidays=_holidays)
 
+
+#  FIXME: DATETIME IS NOT TIMEZONE AWARE. SO ON FRIDAYS LATE NIGHT, IT WILL SHOW AS NON BUSINESS DAY.
+
+
 def forward(date: str, days: int, fname="ANBIMA") -> str:
     """
 
@@ -52,9 +56,6 @@ def forward(date: str, days: int, fname="ANBIMA") -> str:
     calendar = init_calendar(fname)
     fwd_date = numpy.busday_offset(date, days, roll="forward", busdaycal=calendar)
     return numpy.datetime_as_string(fwd_date)
-
-
-#  FIXME: DATETIME IS NOT TIMEZONE AWARE. SO ON FRIDAYS LATE NIGHT, IT WILL SHOW AS NON BUSINESS DAY.
 
 
 class Anbima(AirflowPlugin):

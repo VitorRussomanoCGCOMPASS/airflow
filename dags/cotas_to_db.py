@@ -1,3 +1,5 @@
+from typing import Any
+
 from flask_api.models.funds import FundsValues, StageFundsValues
 from operators.api import BritechOperator
 from operators.custom_sql import MSSQLOperator, SQLCheckOperator
@@ -9,37 +11,29 @@ from airflow.decorators import task
 from airflow.exceptions import AirflowFailException
 from airflow.models.baseoperator import chain
 from airflow.operators.latest_only import LatestOnlyOperator
-from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
 default_args = {
     "owner": "airflow",
-    "start_date": datetime(2023, 4, 14, tz="America/Sao_Paulo"),
+    "start_date": datetime(2023, 4, 21, tz="America/Sao_Paulo"),
 }
-
-
-def _join_ids(ids_1: None | list = None, ids_2: None | list = None):
-
-    print(ids_1)
-    print(ids_2)
-    # FIXME: SOMEHOW IS COMING OUT EMPTY.
-
-    return next(item for item in [ids_1, ids_2] if item is not None)
 
 
 with DAG(
     "cotas_to_db",
     default_args=default_args,
-    catchup=True,
-    schedule=None,
-    max_active_runs=2,
+    catchup=False,
+    schedule="0 * * * MON-FRI",
+    max_active_runs=1,
 ):
 
     is_business_day = SQLCheckOperator(
         task_id="check_for_hol",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
+        database="DB_Brasil",
+        conn_id="mssql-default",
     )
 
     latest_only = LatestOnlyOperator(
@@ -56,8 +50,8 @@ with DAG(
             conn_id="mssql-default",
             sql=""" 
                         SELECT cnpj FROM funds WHERE britech_id NOT IN
-                        ( SELECT britech_id FROM funds_values WHERE cast(Data  as Date) = '{{macros.template_tz.convert_ts(ds)}}')
-                            and closure_date >= '{{macros.template_tz.convert_ts(ds)}}' or closure_date is null
+                        ( SELECT britech_id FROM funds_values WHERE cast(Data  as Date) = '{{macros.template_tz.convert_ts(data_interval_start)}}')
+                            and closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}' or closure_date is null
                 """,
             do_xcom_push=True,
         )
@@ -66,8 +60,10 @@ with DAG(
         def generate_status_request(cnpjs, **context):
             from itertools import chain
 
+            # ds to data interval.
+
             ds = context["task"].render_template(
-                "{{macros.template_tz.convert_ts(ds)}}",
+                "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),+1)}}",
                 context,
             )
 
@@ -143,22 +139,26 @@ with DAG(
         task_id="fetch_active_funds",
         database="DB_Brasil",
         conn_id="mssql-default",
-        sql=" SELECT britech_id FROM funds  where closure_date >= '{{macros.template_tz.convert_ts(ds)}}' or closure_date is null",
+        sql=" SELECT britech_id FROM funds  where closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}' or closure_date is null",
         do_xcom_push=True,
         trigger_rule=TriggerRule.ALL_SKIPPED,
     )
 
     chain(fetch_non_filled_funds, fetch_active_funds)
 
-    join_ids = PythonOperator(
-        task_id="join_ids",
-        python_callable=_join_ids,
-        op_kwargs={
-            "ids_1": fetch_active_funds.output,
-            "ids_2": convert_cnpjs_into_ids.output,
-        },
-        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
-    )
+    @task(trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+    def join_ids(**context):
+        ids = context["ti"].xcom_pull(task_ids="fetch_active_funds")
+        print(ids)
+        # if ids is empty, then it means that it is operating on latest only
+        # so we use the ids from the latest only 'process'
+        if not ids:
+            ids = context["ti"].xcom_pull(task_ids="latest.convert_cnpjs_into_ids")
+
+        return ids
+
+    joined_ids = join_ids()
+    chain([fetch_active_funds, convert_cnpjs_into_ids], joined_ids)
 
     @task
     def generate_cotas_request(ids: list | None = None, **context):
@@ -169,12 +169,12 @@ with DAG(
 
         try:
             ds = context["task"].render_template(
-                "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}",
+                "{{macros.template_tz.convert_ts(data_interval_start)}}",
                 context,
             )
         except ValueError:
             ds = context["task"].render_template(
-                "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ds),-1)}}",
+                "{{macros.template_tz.convert_ts(data_interval_start)}}",
                 context,
             )
 
@@ -191,18 +191,17 @@ with DAG(
             )
         )
 
-    generated_cotas_request = generate_cotas_request(join_ids.output)
+    generated_cotas_request = generate_cotas_request(joined_ids)
 
     fetch_funds_data = BritechOperator.partial(
         task_id="fetch_funds_data",
         endpoint="Fundo/BuscaHistoricoCotaDia",
         do_xcom_push=True,
     ).expand_kwargs(generated_cotas_request)
-
     with TaskGroup(group_id="database") as database:
 
         @task
-        def join_data(funds_data: dict):
+        def join_data(funds_data: dict) -> list[Any]:
             result = []
             for fund_data in funds_data:
                 result.append(fund_data[-1])
@@ -243,7 +242,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_funds_values WHERE cast(Data as date) != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}') 
+                ( SELECT * from stage_funds_values WHERE cast(Data as date) != '{{macros.template_tz.convert_ts(data_interval_start)}}') 
                 THEN 0
                 ELSE 1 
                 END
@@ -268,7 +267,17 @@ with DAG(
             holdlock=True,
             database="DB_Brasil",
             conn_id="mssql-default",
-            set_=("PLFechamento", "CotaFechamento"),
+            set_=(
+                "CotaAbertura",
+                "CotaFechamento",
+                "CotaBruta",
+                "PLAbertura",
+                "PLFechamento",
+                "PatrimonioBruto",
+                "QuantidadeFechamento",
+                "CotaEx",
+                "CotaRendimento",
+            ),
         )
 
         clean_temp_table = MSSQLOperator(
@@ -288,6 +297,3 @@ with DAG(
         merge_tables,
         clean_temp_table,
     )
-
-
-# TODO :  WE CAN USE MSSQL OPERATOR FOR BUSINESS DAY.
