@@ -69,6 +69,7 @@ x-airflow-common:
     AIRFLOW__EMAIL__EMAIL_CONN_ID: sendgrid-default
     SENDGRID_MAIL_FROM: compass@info.cgcompass.com
     AIRFLOW__CORE__XCOM_BACKEND : xcom_backend.CustomXComBackend
+    AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT: False
     
     #AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER : "wasb-logging"
     #AIRFLOW__LOGGING__REMOTE_LOGGING : "True"
