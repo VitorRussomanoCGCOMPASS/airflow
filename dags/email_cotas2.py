@@ -152,6 +152,8 @@ def valueformat(value) -> str:
 
     return f"{value:0,.8f}".replace(".", ",")
 
+# TODO : ADD THIS FOR CHECKING ID.
+
 
 def _is_not_empty(list_ids: list) -> bool:
     from itertools import chain
@@ -175,7 +177,7 @@ def _raise_if_empty(list_ids: list) -> bool | None:
 
 with DAG(
     "email_cotas_pl_am",
-    schedule='0 9 * * MON-FRI',
+    schedule="0 9 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql/"],
@@ -302,13 +304,14 @@ with DAG(
     )
 
     # FIXME : python_http_client.exceptions.BadRequestsError: HTTP Error 400: Bad Request
+
     send_email = SendGridOperator(
         task_id="send_email",
-        to="Vitor.Ibanez@cgcompass.com",
         subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
-        parameters={
-            "html_content": render_template.output,
-        },
+        to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+        html_content=render_template.output,
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        is_multiple=True,
     )
 
     chain(is_business_day, [indices, funds])
@@ -317,7 +320,7 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_pm",
-    schedule='0 16 * * MON-FRI',
+    schedule="0 16 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
@@ -464,12 +467,13 @@ with DAG(
     # FIXME : python_http_client.exceptions.BadRequestsError: HTTP Error 400: Bad Request
     send_email = SendGridOperator(
         task_id="send_email",
-        to="Vitor.Ibanez@cgcompass.com",
         subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
-        parameters={
-            "html_content": render_template.output,
-        },
+        to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+        html_content=render_template.output,
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        is_multiple=True,
     )
+
     chain(is_business_day, [indices, funds])
     chain(is_business_day, fetch_template, render_template, send_email)
 
@@ -477,7 +481,7 @@ with DAG(
 with DAG(
     "email_cotas_pl_prev",
     catchup=False,
-    schedule='0 9 * * MON-FRI',
+    schedule="0 9 * * MON-FRI",
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
@@ -606,10 +610,11 @@ with DAG(
 
     send_email = SendGridOperator(
         task_id="send_email",
-        to="vitor.ibanez@cgcompass.com",
-        cc="middleofficebr@cgcompass.com",
         subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
-        parameters={"html_content": render_template.output},
+        to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+        html_content=render_template.output,
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        is_multiple=True,
     )
 
     chain(is_business_day, [indices, funds])
@@ -619,7 +624,7 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_evening",
-    schedule='0 18 * * MON-FRI',
+    schedule="0 18 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
@@ -717,6 +722,7 @@ with DAG(
                 "complementary_data": fetch_complementary_funds_data.output,
                 "filter": True,
             },
+            do_xcom_push=True,
         )
 
         chain(
@@ -750,19 +756,19 @@ with DAG(
 
         send_email = SendGridOperator(
             task_id="send_email",
-            to="vitor.ibanez@cgcompass.com",
-            cc="middleofficebr@cgcompass.com",
             subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
-            parameters={"html_content": render_template.output},
+            to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+            html_content=render_template.output,
+            parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+            is_multiple=True,
         )
-
         chain(fetch_template, render_template, send_email)
     chain([funds, indices], report)
 
 
 with DAG(
     "email_cotas_pl_evening_complete",
-    schedule='0 18 * * MON-FRI',
+    schedule="0 18 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
@@ -889,12 +895,11 @@ with DAG(
     )
     send_email = SendGridOperator(
         task_id="send_email",
-        to="Vitor.Ibanez@cgcompass.com",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
-        parameters={
-            "html_content": render_template.output,
-        },
+        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
+        to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+        html_content=render_template.output,
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        is_multiple=True,
     )
     chain(is_business_day, [indices, all_funds])
     chain(is_business_day, fetch_template, render_template, send_email)
-    

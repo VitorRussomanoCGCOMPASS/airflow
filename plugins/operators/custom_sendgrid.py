@@ -1,6 +1,6 @@
 import os
 from typing import Iterable, Union, Sequence
-
+from FileObjects import HTML
 from sendgrid.helpers.mail import (
     Content,
     Email,
@@ -8,8 +8,9 @@ from sendgrid.helpers.mail import (
     MailSettings,
     Personalization,
     SandBoxMode,
+    To,
 )
-
+from airflow.models.xcom_arg import XComArg
 from airflow.models.baseoperator import BaseOperator
 from airflow.providers.sendgrid.utils.emailer import _post_sendgrid_mail
 from airflow.utils.context import Context
@@ -45,8 +46,8 @@ class SendGridOperator(BaseOperator):
 
     """
 
-    template_fields: Sequence[str] = ("subject", "parameters", "to")
-    template_ext: Sequence[str] = (".json")
+    template_fields: Sequence[str] = ("subject", "parameters", "to", "html_content")
+    template_ext: Sequence[str] = ".json"
 
     def __init__(
         self,
@@ -58,6 +59,7 @@ class SendGridOperator(BaseOperator):
         sandbox_mode: bool = False,
         sendgrid_conn_id: str = "sendgrid-default",
         is_multiple: bool = True,
+        html_content: XComArg | str | HTML,
         parameters: dict | None = None,
         **kwargs,
     ) -> None:
@@ -68,12 +70,14 @@ class SendGridOperator(BaseOperator):
         self.sandbox_mode = sandbox_mode
         self.sendgrid_conn_id = sendgrid_conn_id
         self.parameters = parameters or {}
+        self.html_content = html_content
         self.is_multiple = is_multiple
         super().__init__(**kwargs)
 
     def execute(self, context: Context) -> None:
-        self.log.info('Using connection %s', self.sendgrid_conn_id)
-        mail = Mail(is_multiple=self.is_multiple)
+        self.log.info("Using connection %s", self.sendgrid_conn_id)
+
+        mail = Mail()
 
         if "from_email" not in self.parameters:
             self.parameters["from_email"] = os.environ.get("SENDGRID_MAIL_FROM")
@@ -88,55 +92,50 @@ class SendGridOperator(BaseOperator):
         mail.subject = self.subject
         mail.mail_settings = MailSettings()
 
-        # FIXME : SINCE IT IS INSIDE THE parameters. IT IS FUCKED WHEN RENDERING.
-
         if self.sandbox_mode:
             mail.mail_settings.sandbox_mode = SandBoxMode(enable=True)
 
             # We could not have this. But since we are mostly going to use this Operator for sending HTML content
             # email, this way we are sure that we are not sending empty e-mails in case of a failure that
             # was not intercepted before.
-        html_content = self.parameters['html_content']
-        mail.add_content(Content("text/html",html_content ))
-        
-        # TODO : TRY TO ACCESS USING context.params
+        if not self.html_content:
+            raise Exception("This SendgridOperator requires an html_content")
 
-        # Add the recipient list of to emails.
-        personalization = Personalization()
+        if isinstance(self.html_content, HTML):
+            self.html_content = self.html_content.html_string
+
+        mail.add_content(Content("text/html", self.html_content))
+
         to = get_email_address_list(self.to)
-        for to_address in to:
-            personalization.add_to(Email(to_address))
+
+        if self.is_multiple:
+            for to_email in to:
+                personalization = Personalization()
+                personalization.add_to(Email(to_email))
+                mail.add_personalization(personalization)
+                
+            personalization = Personalization()
+            personalization.add_to(Email(from_email))
+
+        else:
+            personalization = Personalization()
+            for to_address in to:
+                personalization.add_to(Email(to_address))
+
+
         if self.cc:
             cc = get_email_address_list(self.cc)
             for cc_address in cc:
                 personalization.add_cc(Email(cc_address))
+
         if self.bcc:
             bcc = get_email_address_list(self.bcc)
             for bcc_address in bcc:
                 personalization.add_bcc(Email(bcc_address))
 
+        mail.add_personalization(personalization)
+
         for key in self.parameters.keys():
             setattr(mail, key, self.parameters[key])
 
         _post_sendgrid_mail(mail.get(), self.sendgrid_conn_id)
-
-
-    def render_template_fields(self, context, jinja_env=None) -> None:
-        """Add the rendered 'parameters' to the context dictionary before running the templating"""
-        # Like the original method, get the env if not provided
-        if not jinja_env:
-            jinja_env = self.get_template_env()
-
-        # Run the render template on parameters and add it to the context
-        if self.parameters:
-            if 'html_content' not in self.parameters:
-                raise Exception("This SendgridOperator requires an html_content in parameters.")
-
-            context["params"] = self.render_template(
-                self.parameters, context, jinja_env, set()
-            )
-
-        # Call the original method
-        super().render_template_fields(context=context, jinja_env=jinja_env)
-
-
