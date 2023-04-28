@@ -55,7 +55,6 @@ x-airflow-common:
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ''
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth'
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
@@ -70,12 +69,12 @@ x-airflow-common:
     SENDGRID_MAIL_FROM: compass@info.cgcompass.com
     AIRFLOW__CORE__XCOM_BACKEND : xcom_backend.CustomXComBackend
     AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT: False
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: True
     
     #AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER : "wasb-logging"
     #AIRFLOW__LOGGING__REMOTE_LOGGING : "True"
     #AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID : "wasb_default"
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG : "True"
-
   volumes:
     # host:container
     - ./dags:/opt/airflow/dags

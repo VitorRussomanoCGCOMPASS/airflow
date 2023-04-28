@@ -7,7 +7,6 @@ from sensors.anbima import AnbimaSensor
 
 from airflow import DAG
 from airflow.models.baseoperator import chain
-from airflow.operators.python import ShortCircuitOperator
 from airflow.utils.task_group import TaskGroup
 
 default_args = {
@@ -18,6 +17,7 @@ default_args = {
     "catchup": False,
     "conn_id": "mssql-default",
     "database": "DB_Brasil",
+    "do_xcom_push": False,
 }
 
 
@@ -74,40 +74,10 @@ with DAG(
                 """,
         )
 
-        transform_json_col = MSSQLOperator(
-            task_id="trasform_json_col",
-            sql=""" 
-            
-        INSERT INTO stage_anbima_vna  (data_referencia ,tipo_titulo, codigo_selic, "index" , tipo_correcao, data_validade, vna)  
-    select distinct A.data_referencia , B.* from stage_anbima_vna A cross apply ( 
-		select * from  OPENJSON(titulos) with (
-		tipo_titulo varchar(50), 
-		codigo_selic varchar(50), 
-		"index" float ,
-		tipo_correcao varchar(50),
-		data_validade date, 
-		vna float)
-		 ) B;
-
-        DELETE FROM stage_anbima_vna where titulos is not null
-
-
-             """,
-        )
-
         merge_vna_tables = MergeSQLOperator(
             task_id="merge_vna_tables",
-            source_table=anbima.StageVNA,
+            source_table=anbima.StageVNAView,
             target_table=anbima.VNA,
-            index_elements=(
-                "data_referencia",
-                "tipo_titulo",
-                "codigo_selic",
-                "index",
-                "tipo_correcao",
-                "data_validade",
-                "vna",
-            ),
         )
 
         chain(
@@ -116,7 +86,6 @@ with DAG(
             fetch_vna,
             store_vna,
             check_vna_date,
-            transform_json_col,
             merge_vna_tables,
         )
 
@@ -232,7 +201,7 @@ with DAG(
     with TaskGroup(group_id="ima") as ima:
 
         clean_stage_table = MSSQLOperator(
-            task_id="clean_stage_table", sql="DELETE FROM stage_raw_anbima_ima"
+            task_id="clean_stage_table", sql="DELETE FROM stage_anbima_ima"
         )
 
         wait_ima = AnbimaSensor(
@@ -254,7 +223,7 @@ with DAG(
 
         store_ima = InsertSQLOperator(
             task_id="store_ima",
-            table=anbima.StageRawIMA,
+            table=anbima.StageIMA,
             values=fetch_ima.output,
         )
 
@@ -263,27 +232,10 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_raw_anbima_ima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_anbima_ima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
-                """,
-        )
-
-        split_ima = MSSQLOperator(
-            task_id="split_ima",
-            sql=""" 
-                INSERT INTO stage_anbima_ima(indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield)
-                SELECT indice,	data_referencia	,variacao_ult12m,	variacao_ult24m,	numero_indice,	variacao_diaria,	variacao_anual,	variacao_mensal,	peso_indice,	quantidade_titulos,	valor_mercado,	pmr,	convexidade	,duration,	yield,	redemption_yield
-                FROM stage_raw_anbima_ima
-                """,
-        )
-        split_ima_to_components = MSSQLOperator(
-            task_id="split_ima_to_components",
-            sql=""" 
-            INSERT INTO stage_components_anbima_ima (indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade)
-            SELECT indice,	data_referencia,	tipo_titulo,	data_vencimento,	codigo_selic,	codigo_isin,	taxa_indicativa,	pu,	pu_juros,	quantidade_componentes,	quantidade_teorica,	valor_mercado,	peso_componente,	prazo_vencimento,	duration,	pmr,	convexidade
-            FROM stage_raw_anbima_ima
                 """,
         )
 
@@ -291,10 +243,28 @@ with DAG(
             task_id="merge_ima_tables",
             source_table=anbima.StageIMA,
             target_table=anbima.IMA,
+            index_elements=(
+                "indice",
+                "data_referencia",
+                "variacao_ult12m",
+                "variacao_ult24m",
+                "numero_indice",
+                "variacao_diaria",
+                "variacao_anual",
+                "variacao_mensal",
+                "peso_indice",
+                "quantidade_titulos",
+                "valor_mercado",
+                "pmr",
+                "convexidade",
+                "duration",
+                "yield",
+                "redemption_yield",
+            ),
         )
         merge_components_ima_tables = MergeSQLOperator(
             task_id="merge_ima_components_table",
-            source_table=anbima.StageComponentsIMA,
+            source_table=anbima.StageComponentsIMAView,
             target_table=anbima.ComponentsIMA,
         )
 
@@ -304,7 +274,6 @@ with DAG(
             fetch_ima,
             store_ima,
             check_ima_date,
-            [split_ima, split_ima_to_components],
             [merge_ima_tables, merge_components_ima_tables],
         )
 

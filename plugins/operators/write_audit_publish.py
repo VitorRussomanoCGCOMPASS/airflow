@@ -136,10 +136,11 @@ class InsertSQLOperator(BaseSQLOperator):
 
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
+from sqlalchemy.sql.selectable import TableClause
 
 class MergeSQLOperator(BaseSQLOperator):
     """
-    Operator that performs a SQL merge operation on two tables.
+    Operator that performs a SQL merge operation on tables or views.
 
     :param conn_id: The connection ID to use for the operator.
     :type conn_id: str or None
@@ -164,8 +165,8 @@ class MergeSQLOperator(BaseSQLOperator):
         *,
         conn_id: str | None = None,
         database: str | None = None,
-        source_table: DeclarativeMeta | Table,
-        target_table: DeclarativeMeta | Table,
+        source_table: DeclarativeMeta | Table | TableClause,
+        target_table: DeclarativeMeta | Table | TableClause,
         index_elements: Iterable[str] | str | None = None,
         index_where: None = None,
         set_: Iterable[Column] | Iterable[str] | None = None,
@@ -204,8 +205,12 @@ class MergeSQLOperator(BaseSQLOperator):
                         "There is no column named %s in table %s", col, table
                     )
             if isinstance(col, Column):
-                if index_elements and col.name in index_elements or not index_elements:
-                    yield col
+                if index_elements and col.name not in index_elements:
+                    raise Exception(
+                        "Update statement includes an element that does not compose the index_elements parameters."
+                    )
+
+                yield col
 
     @staticmethod
     def generate_on_clause(primary_keys: list) -> str:
@@ -297,14 +302,12 @@ class MergeSQLOperator(BaseSQLOperator):
             If either `target_table` or `source_table` is not of type `Table` or
             `DeclarativeMeta`.
         """
-        if not isinstance(source_table, Table) or not isinstance(target_table, Table):
-            raise TypeError("Tables must be of type <Table> or <DeclarativeMeta>")
 
         target_table_pks = [pk.name for pk in target_table.primary_key]
         cols = [
             f'"{i.name}"'
             for i in source_table.columns
-            if not index_elements or i.name not in index_elements
+            if not index_elements or i.name in index_elements
         ]
 
         sql = f""" 
@@ -327,13 +330,13 @@ class MergeSQLOperator(BaseSQLOperator):
 
         hook = self.get_db_hook()
 
-        if isinstance(self.target_table, DeclarativeMeta):
-            # Transform into Table Object for consistency
+        # Transform into Table Object for consistency
+        if not isinstance(self.target_table, Table):
             self.target_table = getattr(self.target_table, "__table__")
 
-        if isinstance(self.source_table, DeclarativeMeta):
+        if not isinstance(self.source_table, Table):
             self.source_table = getattr(self.source_table, "__table__")
-        # if we have index elements, this means we can work only with a subset of the table
+       
 
         sql = self._generate_merge_sql(
             source_table=self.source_table,
@@ -345,6 +348,10 @@ class MergeSQLOperator(BaseSQLOperator):
 
         self.log.debug("Generated sql: %s", sql)
 
-        hook.run(sql)
+        hook.run(sql, handler=None)
 
-        self.log.info("Sucessfuly merged.")
+        self.log.info(
+            "Sucessfuly merged tables source : %s and  target :  %s",
+            self.source_table.name,
+            self.target_table.name,
+        )

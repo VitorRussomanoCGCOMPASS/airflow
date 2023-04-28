@@ -7,6 +7,7 @@ from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import BaseOperator
 from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
+from FileObjects import JSON
 
 
 class BritechOperator(BaseOperator):
@@ -60,7 +61,7 @@ class BritechOperator(BaseOperator):
         self.json = json
         self.echo_params = echo_params
 
-    def execute(self, context: Context) -> tuple | Any:
+    def execute(self, context: Context) -> tuple | JSON:
         "Call an specific API endpoint and generate the response"
 
         hook = BritechHook(method="GET", conn_id=self.britech_conn_id)
@@ -84,9 +85,8 @@ class BritechOperator(BaseOperator):
                 raise AirflowException("Response check returned False.")
 
         if self.echo_params:
-            return response.json(), self.request_params
-
-        return response.json()
+            return JSON(response.text), self.request_params
+        return JSON(response.text)
 
 
 class AnbimaOperator(BaseOperator):
@@ -133,7 +133,7 @@ class AnbimaOperator(BaseOperator):
         self.log_response = log_response
         self.data = data
 
-    def execute(self, context: Context):
+    def execute(self, context: Context) -> JSON:
         "Call an specific API endpoint and generate the response"
 
         hook = AnbimaHook(conn_id=self.anbima_conn_id)
@@ -155,4 +155,4 @@ class AnbimaOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        return response.json()
+        return JSON(response.text)
