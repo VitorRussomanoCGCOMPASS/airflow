@@ -1,11 +1,13 @@
+import json
+import logging
 import os
 from tempfile import NamedTemporaryFile
-from typing import Any
+from typing import Any, Callable, NoReturn
+
+from FileObjects import JSON, Input
+
 from airflow.models.xcom import BaseXCom
 from airflow.providers.microsoft.azure.hooks.wasb import WasbHook
-import logging
-from FileObjects import JSON, Input
-from typing import NoReturn, Callable
 
 
 class BackendException(Exception):
@@ -35,14 +37,16 @@ class CustomXComBackend(BaseXCom):
         hook = WasbHook(wasb_conn_id="wasb-default")
 
         with NamedTemporaryFile(mode="w") as tmp:
-            # Defaults to JSON
 
             enforced_json = False
             # Defaults to JSON
             if not isinstance(value, Input):
-                value = JSON(values=value)
+                json_values = json.dumps(value)
+
+                value = JSON(values=json_values)
+
                 enforced_json = True
-                logging.info("Defaulted to SON backend handler")
+                logging.info("Defaulted to JSON backend handler")
 
             # Explicit point of failure
             try:

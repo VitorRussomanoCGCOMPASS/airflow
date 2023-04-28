@@ -1,24 +1,21 @@
 import os
-from typing import Iterable, Union, Sequence
+from typing import Iterable, Sequence, Union
+
 from FileObjects import HTML
-from sendgrid.helpers.mail import (
-    Content,
-    Email,
-    Mail,
-    MailSettings,
-    Personalization,
-    SandBoxMode,
-    To,
-)
-from airflow.models.xcom_arg import XComArg
+from sendgrid.helpers.mail import (Asm, Content, Email, Mail, MailSettings,
+                                   Personalization, SandBoxMode)
+
 from airflow.models.baseoperator import BaseOperator
+from airflow.models.xcom_arg import XComArg
 from airflow.providers.sendgrid.utils.emailer import _post_sendgrid_mail
 from airflow.utils.context import Context
 from airflow.utils.email import get_email_address_list
 
 AddressesType = Union[str, Iterable[str]]
 
-# FIXME : THIS IS FUCKED.
+# TODO : GROUP ID?
+
+
 class SendGridOperator(BaseOperator):
     """
 
@@ -56,7 +53,6 @@ class SendGridOperator(BaseOperator):
         subject: str,
         cc: AddressesType | None = None,
         bcc: AddressesType | None = None,
-        sandbox_mode: bool = False,
         sendgrid_conn_id: str = "sendgrid-default",
         is_multiple: bool = True,
         html_content: XComArg | str | HTML,
@@ -67,7 +63,6 @@ class SendGridOperator(BaseOperator):
         self.subject = subject
         self.cc = cc
         self.bcc = bcc
-        self.sandbox_mode = sandbox_mode
         self.sendgrid_conn_id = sendgrid_conn_id
         self.parameters = parameters or {}
         self.html_content = html_content
@@ -92,8 +87,8 @@ class SendGridOperator(BaseOperator):
         mail.subject = self.subject
         mail.mail_settings = MailSettings()
 
-        if self.sandbox_mode:
-            mail.mail_settings.sandbox_mode = SandBoxMode(enable=True)
+        if "asm" in self.parameters:
+            self.parameters['asm'] = Asm(self.parameters.pop("asm"))
 
             # We could not have this. But since we are mostly going to use this Operator for sending HTML content
             # email, this way we are sure that we are not sending empty e-mails in case of a failure that
@@ -113,7 +108,7 @@ class SendGridOperator(BaseOperator):
                 personalization = Personalization()
                 personalization.add_to(Email(to_email))
                 mail.add_personalization(personalization)
-                
+
             personalization = Personalization()
             personalization.add_to(Email(from_email))
 
@@ -121,7 +116,6 @@ class SendGridOperator(BaseOperator):
             personalization = Personalization()
             for to_address in to:
                 personalization.add_to(Email(to_address))
-
 
         if self.cc:
             cc = get_email_address_list(self.cc)

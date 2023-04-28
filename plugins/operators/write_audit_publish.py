@@ -109,9 +109,7 @@ class InsertSQLOperator(BaseSQLOperator):
             val.update((col, None) for col in columns - val.keys())
             out = [val.pop(key) for key in val.keys() - columns]
 
-
         # TODO : We can get the maxset to report the columns that were dropped.
-
 
         return values
 
@@ -168,7 +166,7 @@ class MergeSQLOperator(BaseSQLOperator):
         database: str | None = None,
         source_table: DeclarativeMeta | Table,
         target_table: DeclarativeMeta | Table,
-        index_elements: list[Column] | Column | None = None,
+        index_elements: Iterable[str] | str | None = None,
         index_where: None = None,
         set_: Iterable[Column] | Iterable[str] | None = None,
         holdlock: bool = True,
@@ -187,9 +185,30 @@ class MergeSQLOperator(BaseSQLOperator):
         self.target_table = target_table
         self.holdlock = holdlock
         self.set_ = set_
+        self.index_elements = index_elements
 
-    @classmethod
-    def generate_on_clause(cls, primary_keys: list) -> str:
+    @staticmethod
+    def validate_columns(
+        table: Table,
+        columns: Iterable[str] | Iterable[Column] | Column | str,
+        index_elements: Iterable[Column] | None = None,
+    ) -> Generator:
+
+        for col in columns:
+            if isinstance(col, str):
+                # We make sure that there is a column with that name for safety
+                try:
+                    col = getattr((getattr(table, "columns")), col)
+                except AttributeError:
+                    raise Exception(
+                        "There is no column named %s in table %s", col, table
+                    )
+            if isinstance(col, Column):
+                if index_elements and col.name in index_elements or not index_elements:
+                    yield col
+
+    @staticmethod
+    def generate_on_clause(primary_keys: list) -> str:
         """
         Generate the ON clause for the MERGE statement using the primary key of the target table.
 
@@ -203,34 +222,16 @@ class MergeSQLOperator(BaseSQLOperator):
         str
             The ON clause for the MERGE statement.
         """
-        stmt = f"target.{primary_keys[0]} = source.{primary_keys[0]}"
+        stmt = f'target."{primary_keys[0]}" = source."{primary_keys[0]}"'
 
         if len(primary_keys) > 1:
             for pk in primary_keys[1:]:
-                stmt += f" AND target.{pk} = source.{pk}"
+                stmt += f' AND target."{pk}" = source."{pk}"'
 
         return stmt
 
-    @classmethod
-    def validate_columns(
-        cls, table: Table, columns: Iterable[str] | Iterable[Column]
-    ) -> Generator:
-
-        for col in columns:
-            if isinstance(col, str):
-                # We make sure that there is a column with that name for safety
-                try:
-                    col = getattr((getattr(table, "columns")), col)
-                except AttributeError:
-                    raise Exception(
-                        "There is no column named %s in table %s", col, table
-                    )
-            if isinstance(col, Column):
-                yield col
-
-    @classmethod
     def generate_update_clause(
-        cls, table: Table, columns: Iterable[str] | Iterable[Column]
+        self, table: Table, columns: Iterable[str] | Iterable[Column]
     ) -> str:
         """
         Generate the UPDATE clause for the MERGE statement using the columns to be updated.
@@ -252,19 +253,23 @@ class MergeSQLOperator(BaseSQLOperator):
                 UPDATE SET 
                 """
 
-        cols = cls.validate_columns(table, columns)
+        cols = self.validate_columns(table, columns)
 
         f_col = next(cols)
-        stmt += f"target.{f_col.name} =  source.{f_col.name}"
+        stmt += f'target."{f_col.name}" =  source."{f_col.name}"'
 
         for col in cols:
-            stmt += f", target.{col.name} =  source.{col.name}"
+            stmt += f', target."{col.name}" =  source."{col.name}"'
 
         return stmt
 
-    @classmethod
     def _generate_merge_sql(
-        cls, target_table: Table, source_table: Table, holdlock: bool, set_
+        self,
+        target_table: Table,
+        source_table: Table,
+        holdlock: bool,
+        set_,
+        index_elements: None | Iterable[str] = None,
     ) -> str:
         """
         Generate SQL statement for merging data from `source_table` to `target_table`.
@@ -296,22 +301,24 @@ class MergeSQLOperator(BaseSQLOperator):
             raise TypeError("Tables must be of type <Table> or <DeclarativeMeta>")
 
         target_table_pks = [pk.name for pk in target_table.primary_key]
-
-        cols = [i.name for i in source_table.columns]
-        source_prefixed_non_pks = ["source" + "." + col for col in cols]
+        cols = [
+            f'"{i.name}"'
+            for i in source_table.columns
+            if not index_elements or i.name not in index_elements
+        ]
 
         sql = f""" 
                 MERGE {target_table.name} {"WITH (HOLDLOCK) as target" if holdlock else "as target"}
                 USING {source_table.name} as source
-                ON {cls.generate_on_clause(primary_keys=target_table_pks)}
+                ON {self.generate_on_clause(primary_keys=target_table_pks)}
 
                 WHEN NOT MATCHED  BY TARGET THEN
                     INSERT ({', '.join(cols)})
-                    VALUES ({', '.join(source_prefixed_non_pks)})
+                    VALUES ({', '.join(["source" + "." + col for col in cols])})
                 """
 
         if set_:
-            update_stmt = cls.generate_update_clause(table=source_table, columns=set_)
+            update_stmt = self.generate_update_clause(table=source_table, columns=set_)
             sql += update_stmt
 
         return sql + " ;"
@@ -326,12 +333,14 @@ class MergeSQLOperator(BaseSQLOperator):
 
         if isinstance(self.source_table, DeclarativeMeta):
             self.source_table = getattr(self.source_table, "__table__")
+        # if we have index elements, this means we can work only with a subset of the table
 
         sql = self._generate_merge_sql(
             source_table=self.source_table,
             target_table=self.target_table,
             holdlock=self.holdlock,
             set_=self.set_,
+            index_elements=self.index_elements,
         )
 
         self.log.debug("Generated sql: %s", sql)

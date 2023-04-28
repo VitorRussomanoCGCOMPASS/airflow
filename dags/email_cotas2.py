@@ -5,14 +5,16 @@ from operators.file_share import FileShareOperator
 from pendulum import datetime
 from sensors.britech import BritechIndicesSensor
 from sensors.sql import SqlSensor
-from FileObjects import HTML
+from FileObjects import HTML, JSON
 from airflow.exceptions import AirflowFailException
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
-from airflow.utils.trigger_rule import TriggerRule
+from sendgrid.helpers.mail import GroupId
+
+# TODO : add group id.
 
 default_args = {
     "owner": "airflow",
@@ -62,9 +64,9 @@ def _render_template(
 
     """
 
-    from jinja2 import BaseLoader, Environment
+    from jinja2 import BaseLoader, Environment, StrictUndefined
 
-    templateEnv = Environment(loader=BaseLoader())
+    templateEnv = Environment(loader=BaseLoader(), undefined=StrictUndefined)
 
     templateEnv.filters["splitdsformat"] = splitdsformat
     templateEnv.filters["percentformat"] = percentformat
@@ -72,7 +74,6 @@ def _render_template(
     templateEnv.filters["valueformat"] = valueformat
 
     rtemplate = templateEnv.from_string(html_template)
-
     rendered_template = rtemplate.render(
         {"indices": indices_data, "funds": complete_funds_data}
     )
@@ -82,7 +83,7 @@ def _render_template(
 
 def _merge(
     funds_data: list[dict], complementary_data: list[dict], filter: bool = False
-) -> str:
+) -> JSON:
     """
     Merges funds_data and complementary_data (funds name, inception date and return since inception) together
     and optionally filters the returns of the fund that has less than 190 days since inception in conformity of regulation.
@@ -124,7 +125,8 @@ def _merge(
                 "RentabilidadeInicio",
             ],
         ] = ""
-    return data.to_json(orient="records")
+
+    return JSON(data.to_json(orient="records"))
 
 
 def splitdsformat(value) -> str:
@@ -151,18 +153,6 @@ def valueformat(value) -> str:
     """Format float replacing '.' with ','"""
 
     return f"{value:0,.8f}".replace(".", ",")
-
-# TODO : ADD THIS FOR CHECKING ID.
-
-
-def _is_not_empty(list_ids: list) -> bool:
-    from itertools import chain
-
-    ids = list(chain(*list_ids))
-    print(ids)
-    if ids:
-        return True
-    return False
 
 
 def _raise_if_empty(list_ids: list) -> bool | None:
@@ -283,6 +273,7 @@ with DAG(
             },
         )
         chain(fetch_indices, check_for_indices, indices_sensor, fetch_indices_return)
+
     fetch_template = FileShareOperator(
         task_id="fetch_template",
         azure_fileshare_conn_id="azure-fileshare-default",
@@ -303,14 +294,12 @@ with DAG(
         do_xcom_push=True,
     )
 
-    # FIXME : python_http_client.exceptions.BadRequestsError: HTTP Error 400: Bad Request
-
     send_email = SendGridOperator(
         task_id="send_email",
         subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
-        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(1587)},
         is_multiple=True,
     )
 
@@ -452,7 +441,6 @@ with DAG(
         do_xcom_push=True,
     )
 
-    # TODO : NEW TEMPLATE.
     render_template = PythonOperator(
         task_id="render_template",
         python_callable=_render_template,
@@ -464,7 +452,6 @@ with DAG(
         do_xcom_push=True,
     )
 
-    # FIXME : python_http_client.exceptions.BadRequestsError: HTTP Error 400: Bad Request
     send_email = SendGridOperator(
         task_id="send_email",
         subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
@@ -585,6 +572,7 @@ with DAG(
                 "complementary_data": fetch_complementary_funds_data.output,
                 "filter": False,
             },
+            do_xcom_push=True,
         )
 
         chain(fetch_funds, check_for_funds, [process_xcom, fetch_funds_return])
@@ -613,7 +601,7 @@ with DAG(
         subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
-        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(18501)},
         is_multiple=True,
     )
 
@@ -756,7 +744,7 @@ with DAG(
 
         send_email = SendGridOperator(
             task_id="send_email",
-            subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
+            subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
             to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
             html_content=render_template.output,
             parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
@@ -895,7 +883,7 @@ with DAG(
     )
     send_email = SendGridOperator(
         task_id="send_email",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
+        subject="CG - COMPASS GROUP INVESTIMENTOS - {{macros.template_tz.convert_ts(data_interval_start)}} - INTERNAL REPORT",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
         parameters={"reply_to": "vitor.ibanez@cgcompass.com"},

@@ -59,7 +59,7 @@ with DAG(
             task_id="store_vna",
             table=anbima.StageVNA,
             values=fetch_vna.output,
-            normalize=False
+            normalize=False,
         )
 
         check_vna_date = SQLCheckOperator(
@@ -72,14 +72,42 @@ with DAG(
                 ELSE 1 
                 END
                 """,
-            database="DB_Brasil",
-            conn_id="mssql-default",
+        )
+
+        transform_json_col = MSSQLOperator(
+            task_id="trasform_json_col",
+            sql=""" 
+            
+        INSERT INTO stage_anbima_vna  (data_referencia ,tipo_titulo, codigo_selic, "index" , tipo_correcao, data_validade, vna)  
+    select distinct A.data_referencia , B.* from stage_anbima_vna A cross apply ( 
+		select * from  OPENJSON(titulos) with (
+		tipo_titulo varchar(50), 
+		codigo_selic varchar(50), 
+		"index" float ,
+		tipo_correcao varchar(50),
+		data_validade date, 
+		vna float)
+		 ) B;
+
+        DELETE FROM stage_anbima_vna where titulos is not null
+
+
+             """,
         )
 
         merge_vna_tables = MergeSQLOperator(
             task_id="merge_vna_tables",
             source_table=anbima.StageVNA,
             target_table=anbima.VNA,
+            index_elements=(
+                "data_referencia",
+                "tipo_titulo",
+                "codigo_selic",
+                "index",
+                "tipo_correcao",
+                "data_validade",
+                "vna",
+            ),
         )
 
         chain(
@@ -88,6 +116,7 @@ with DAG(
             fetch_vna,
             store_vna,
             check_vna_date,
+            transform_json_col,
             merge_vna_tables,
         )
 
@@ -129,8 +158,6 @@ with DAG(
                 ELSE 1 
                 END
                 """,
-            database="DB_Brasil",
-            conn_id="mssql-default",
         )
 
         merge_debentures_table = MergeSQLOperator(
@@ -185,8 +212,6 @@ with DAG(
                 ELSE 1 
                 END
                 """,
-            database="DB_Brasil",
-            conn_id="mssql-default",
         )
 
         merge_cricra_tables = MergeSQLOperator(
@@ -243,8 +268,6 @@ with DAG(
                 ELSE 1 
                 END
                 """,
-            database="DB_Brasil",
-            conn_id="mssql-default",
         )
 
         split_ima = MSSQLOperator(
