@@ -1,13 +1,12 @@
 from typing import Any, Callable
-
+import json
 from hooks.anbima import AnbimaHook
 from hooks.britech import BritechHook
-
+from FileObjects import JSON
 from airflow.exceptions import AirflowException
 from airflow.models.baseoperator import BaseOperator
 from airflow.utils.context import Context
 from airflow.utils.operator_helpers import determine_kwargs
-from FileObjects import JSON
 
 
 class BritechOperator(BaseOperator):
@@ -61,7 +60,7 @@ class BritechOperator(BaseOperator):
         self.json = json
         self.echo_params = echo_params
 
-    def execute(self, context: Context) -> tuple | JSON:
+    def execute(self, context: Context) -> tuple:
         "Call an specific API endpoint and generate the response"
 
         hook = BritechHook(method="GET", conn_id=self.britech_conn_id)
@@ -85,8 +84,8 @@ class BritechOperator(BaseOperator):
                 raise AirflowException("Response check returned False.")
 
         if self.echo_params:
-            return JSON(response.text), self.request_params
-        return JSON(response.text)
+            return response.json(), self.request_params
+        return response.json()
 
 
 class AnbimaOperator(BaseOperator):
@@ -98,7 +97,8 @@ class AnbimaOperator(BaseOperator):
     :param response_check: A check against the 'requests' response object.
         The callable takes the response object as the first positional argument
         and optionally any number of keyword arguments available in the context dictionary.
-        It should return True for 'pass' and False otherwise.    :param extra_options:
+        It should return True for 'pass' and False otherwise.
+    d:param extra_options:
     :param log_response: Log the response (default: False)
     :param request_params: params in the URL for a GET request (templated)
     :param endpoint: The relative part of the full url.
@@ -133,7 +133,7 @@ class AnbimaOperator(BaseOperator):
         self.log_response = log_response
         self.data = data
 
-    def execute(self, context: Context) -> JSON:
+    def execute(self, context: Context) -> str:
         "Call an specific API endpoint and generate the response"
 
         hook = AnbimaHook(conn_id=self.anbima_conn_id)
@@ -155,4 +155,10 @@ class AnbimaOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        return JSON(response.text)
+        response.encoding= response.apparent_encoding
+        print(response.encoding)
+        return response.text.encode('utf-8').decode('utf-8')
+    
+    
+    
+    

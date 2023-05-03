@@ -355,3 +355,6 @@ class MergeSQLOperator(BaseSQLOperator):
             self.source_table.name,
             self.target_table.name,
         )
+
+
+ 

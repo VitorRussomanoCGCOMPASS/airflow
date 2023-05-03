@@ -3,7 +3,7 @@ from typing import Iterable, Sequence, Union
 
 from FileObjects import HTML
 from sendgrid.helpers.mail import (Asm, Content, Email, Mail, MailSettings,
-                                   Personalization, SandBoxMode)
+                                   Personalization)
 
 from airflow.models.baseoperator import BaseOperator
 from airflow.models.xcom_arg import XComArg

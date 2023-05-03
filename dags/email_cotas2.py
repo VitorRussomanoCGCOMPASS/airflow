@@ -296,7 +296,7 @@ with DAG(
 
     send_email = SendGridOperator(
         task_id="send_email",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
+        subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
         parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(1587)},
@@ -454,7 +454,7 @@ with DAG(
 
     send_email = SendGridOperator(
         task_id="send_email",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
+        subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
         parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
@@ -475,7 +475,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{data_interval_start}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),-1)}}') then 0 else 1 end",
         skip_on_failure=True,
     )
 
@@ -598,7 +598,7 @@ with DAG(
 
     send_email = SendGridOperator(
         task_id="send_email",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS PRÉVIAS",
+        subject="CG - COMPASS - COTAS PRÉVIAS",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
         parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(18501)},
@@ -744,7 +744,7 @@ with DAG(
 
         send_email = SendGridOperator(
             task_id="send_email",
-            subject="CG - COMPASS GROUP INVESTIMENTOS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
+            subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
             to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
             html_content=render_template.output,
             parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
@@ -764,7 +764,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{data_interval_start}}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),-1)}}') then 0 else 1 end",
         skip_on_failure=True,
     )
 
@@ -883,7 +883,7 @@ with DAG(
     )
     send_email = SendGridOperator(
         task_id="send_email",
-        subject="CG - COMPASS GROUP INVESTIMENTOS - {{macros.template_tz.convert_ts(data_interval_start)}} - INTERNAL REPORT",
+        subject="CG - COMPASS - {{macros.template_tz.convert_ts(data_interval_start)}} - INTERNAL REPORT",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
         parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
