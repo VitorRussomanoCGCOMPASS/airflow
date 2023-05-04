@@ -20,7 +20,7 @@ default_args = {
     "do_xcom_push": False,
 }
 
-
+# TODO: SCHEDULE AND DATE PARAMS.
 with DAG(
     "anbima",
     schedule=None,
@@ -28,10 +28,12 @@ with DAG(
 ):
 
     is_business_day = SQLCheckOperator(
-        task_id="check_for_hol",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ds}}') then 0 else 1 end;",
+        task_id="is_business_day",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
+
+
     with TaskGroup(group_id="vna") as vna:
 
         clean_stage_table = MSSQLOperator(
