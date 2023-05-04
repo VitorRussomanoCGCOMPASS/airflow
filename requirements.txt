@@ -65,7 +65,7 @@ email-validator==1.3.0
 exceptiongroup==1.1.0
 flasgger==0.9.5
 Flask==2.2.2
-flask-api @ git+https://github.com/VitorRussomanoCGCOMPASS/flask_api.git@f5ece197055d045cf5d41c2392c1a14f19026268
+flask-api @ git+https://github.com/VitorRussomanoCGCOMPASS/flask_api.git@b86a6db4fd0722d335f38a31d672d73aa6ed3861
 wheels-airflow @ git+https://github.com/VitorRussomanoCGCOMPASS/wheels_airflow.git@043c9901377d95c7d5b719b47a7e41baea0be365
 Flask-AppBuilder==4.1.4
 Flask-Babel==2.0.0

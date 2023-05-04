@@ -75,7 +75,6 @@ class CustomXComBackend(BaseXCom):
                 file_path=tmp.name,
                 container_name=CustomXComBackend.CONTAINER_NAME,
                 blob_name=blob_key,
-                encoding="utf-8",
             )
 
         # define the string that will be saved to the Airflow metadata
@@ -96,25 +95,13 @@ class CustomXComBackend(BaseXCom):
         file_extension = os.path.splitext(reference_string)[1]
 
         with NamedTemporaryFile() as temp:
+
             hook.get_file(
-                file_path=temp.name,
+                file_path = temp.name,
                 container_name=CustomXComBackend.CONTAINER_NAME,
                 blob_name=blob_key,
                 offset=0,
-                length=100000,
             )
-            test =hook.read_file(
-                container_name=CustomXComBackend.CONTAINER_NAME,
-                blob_name=blob_key,
-                offset=0,
-                length=100000,
-                encoding="utf-8",
-            )
-            print(type(test))
-            print(test)
-        
-            temp.flush()
-            temp.seek(0)
 
             for subclass in Input.__subclasses__():
                 if (
@@ -127,6 +114,7 @@ class CustomXComBackend(BaseXCom):
                     )
 
                     if read_from_file:
+                        temp.seek(0)
                         return read_from_file(temp)
 
             raise BackendException(

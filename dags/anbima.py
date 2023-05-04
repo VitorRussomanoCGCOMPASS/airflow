@@ -129,6 +129,13 @@ with DAG(
                 """,
         )
 
+        transform_col_percent_reune = MSSQLOperator(
+            task_id="transform_col_percent_reune",
+            sql=""" 
+                UPDATE stage_debentures SET percent_reune = CAST(NULLIF(REPLACE(percent_reune, '%', ''), '--') AS FLOAT) / 100 
+                """,
+        )
+
         merge_debentures_table = MergeSQLOperator(
             task_id="merge_debentures_table",
             source_table=anbima.StageDebentures,
@@ -140,6 +147,7 @@ with DAG(
             fetch_debentures,
             store_debentures,
             check_debentures_date,
+            transform_col_percent_reune,
             merge_debentures_table,
         )
     with TaskGroup(group_id="cricra") as cricra:

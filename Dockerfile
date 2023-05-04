@@ -11,4 +11,4 @@ ENV PYTHONPATH "${PYTHONPATH}:/opt/airflow/include"
 
 RUN pip install --user --upgrade pip
 RUN pip install --no-cache-dir --user -r /requirements.txt
-# docker build . --tag extending_airflow:latest
+# docker build . --tag extending_airflow:latest 

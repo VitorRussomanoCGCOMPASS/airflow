@@ -133,7 +133,7 @@ class AnbimaOperator(BaseOperator):
         self.log_response = log_response
         self.data = data
 
-    def execute(self, context: Context) -> str:
+    def execute(self, context: Context):
         "Call an specific API endpoint and generate the response"
 
         hook = AnbimaHook(conn_id=self.anbima_conn_id)
@@ -155,10 +155,5 @@ class AnbimaOperator(BaseOperator):
             if not self.response_check(response, **kwargs):
                 raise AirflowException("Response check returned False.")
 
-        response.encoding= response.apparent_encoding
-        print(response.encoding)
-        return response.text.encode('utf-8').decode('utf-8')
-    
-    
-    
-    
+        # response.encoding = response.apparent_encoding
+        return response.json()

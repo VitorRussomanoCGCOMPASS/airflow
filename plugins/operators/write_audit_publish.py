@@ -103,9 +103,8 @@ class InsertSQLOperator(BaseSQLOperator):
         """
 
         columns = set([col for col in table.columns.keys()])
-
+        print(values)
         for val in values:
-
             val.update((col, None) for col in columns - val.keys())
             out = [val.pop(key) for key in val.keys() - columns]
 
