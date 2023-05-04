@@ -7,7 +7,9 @@ from airflow.models.xcom_arg import XComArg
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
-# TODO : PROBABLY HAVE UNKNOWN, EEXCLUDE, INCLUDE, WARNING.
+from typing import Iterable
+
+
 class InsertSQLOperator(BaseSQLOperator):
 
     """
@@ -63,14 +65,16 @@ class InsertSQLOperator(BaseSQLOperator):
         database: str | None = None,
         table: DeclarativeMeta | Table,
         values: dict[str, Any] | XComArg,
-        normalize: bool = True,
         engine_kwargs: dict | None = None,
+        normalize: bool = True,
+        data_keys: dict | Iterable[dict] | None = None,
         **kwargs,
     ) -> None:
         self.table = table
         self.values = values or {}
         self.normalize = normalize
         self.engine_kwargs = engine_kwargs or {}
+        self.data_keys = data_keys
 
         hook_params = kwargs.pop("hook_params", {})
         kwargs["hook_params"] = {"database": database, **hook_params}
@@ -80,8 +84,53 @@ class InsertSQLOperator(BaseSQLOperator):
             **kwargs,
         )
 
-    @classmethod
-    def _normalize_dict(cls, values, table):
+    def _invoke_pre_processing(self, table: Table, normalize: bool, data_keys):
+
+        columns = set([col for col in table.columns.keys()])
+
+        if data_keys:
+            keys = [
+                data_keys.get(col) if data_keys.get(col) is not None else col
+                for col in columns
+            ]
+
+            if any(data_keys.values()) not in keys:
+                raise ValueError(
+                    "The data key argument for one or more fields are "
+                    "not present in the Table model."
+                    "Check the following field namess : {}".format(
+                        set(data_keys) - columns
+                    )
+                )
+
+            if len(keys) != len(set(keys)):
+                data_keys_duplicates = {x for x in keys if keys.count(x) > 1}
+                raise ValueError(
+                    "The data_key argument for one or more fields collides "
+                    "with another field's name or data_key argument. "
+                    "Check the following field names and "
+                    "data_key arguments: {}".format(list(data_keys_duplicates))
+                )
+
+            self.log.debug("Replacing data keys")
+            self.values = self._replace_keys(self.values, data_keys)
+
+        if normalize:
+            # Deletes extra keys and create key value pair with NULL in the missing keys
+            self.log.debug("Normalizing values")
+            self.values = self._normalize_dict(self.values, columns)
+
+    @staticmethod
+    def _replace_keys(values, data_keys):
+
+        for value in values:
+            for key, new_key in data_keys.items():
+                value[new_key] = value.pop(key)
+
+        return values
+
+    @staticmethod
+    def _normalize_dict(values, columns):
         """
         Normalize all dictionaries in values to ensure that it contains all expected keys for the SQL model.
 
@@ -102,13 +151,9 @@ class InsertSQLOperator(BaseSQLOperator):
 
         """
 
-        columns = set([col for col in table.columns.keys()])
-        print(values)
         for val in values:
             val.update((col, None) for col in columns - val.keys())
             out = [val.pop(key) for key in val.keys() - columns]
-
-        # TODO : We can get the maxset to report the columns that were dropped.
 
         return values
 
@@ -126,16 +171,17 @@ class InsertSQLOperator(BaseSQLOperator):
 
         with engine.connect() as conn:
 
-            if self.normalize:
-                self.log.debug("Normalizing values")
-
-                self.values = self._normalize_dict(self.values, self.table)
+            self._invoke_pre_processing(
+                data_keys=self.data_keys, table=self.table, normalize=self.normalize
+            )
 
             conn.execute(self.table.insert(), self.values)
 
         self.log.info("Sucessfully inserted values into table :%s", self.table.name)
 
+
 from sqlalchemy.sql.selectable import TableClause
+
 
 class MergeSQLOperator(BaseSQLOperator):
     """
@@ -335,7 +381,6 @@ class MergeSQLOperator(BaseSQLOperator):
 
         if not isinstance(self.source_table, Table):
             self.source_table = getattr(self.source_table, "__table__")
-       
 
         sql = self._generate_merge_sql(
             source_table=self.source_table,
@@ -354,6 +399,3 @@ class MergeSQLOperator(BaseSQLOperator):
             self.source_table.name,
             self.target_table.name,
         )
-
-
- 

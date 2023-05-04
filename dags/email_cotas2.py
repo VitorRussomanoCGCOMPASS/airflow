@@ -175,7 +175,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -316,7 +316,7 @@ with DAG(
 ):
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}s') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -475,7 +475,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),-1)}}') then 0 else 1 end",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -764,7 +764,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),-1)}}') then 0 else 1 end",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 

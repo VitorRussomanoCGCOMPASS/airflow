@@ -14,25 +14,20 @@ default_args = {
     "start_date": datetime(2023, 1, 1),
     "mode": "reschedule",
     "timeout": 60 * 60,
-    "catchup": False,
     "conn_id": "mssql-default",
     "database": "DB_Brasil",
     "do_xcom_push": False,
 }
 
-# TODO: SCHEDULE AND DATE PARAMS.
 with DAG(
-    "anbima",
-    schedule=None,
-    default_args=default_args,
+    "anbima", schedule="00 05 * * MON-FRI", default_args=default_args, catchup=False
 ):
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
-
 
     with TaskGroup(group_id="vna") as vna:
 
@@ -52,7 +47,7 @@ with DAG(
             task_id="fetch_vna",
             endpoint="/feed/precos-indices/v1/titulos-publicos/vna",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             do_xcom_push=True,
         )
@@ -69,7 +64,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_anbima_vna where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_anbima_vna where data_referencia != '{{macros.template_tz.convert_ts(data_interval_start)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -100,7 +95,7 @@ with DAG(
         wait_debentures = AnbimaSensor(
             task_id="wait_debentures",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
         )
@@ -109,7 +104,7 @@ with DAG(
             task_id="fetch_debentures",
             endpoint="/feed/precos-indices/v1/debentures/mercado-secundario",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             do_xcom_push=True,
         )
@@ -124,7 +119,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_debentures where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_debentures where data_referencia != '{{macros.template_tz.convert_ts(data_interval_start)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -161,7 +156,7 @@ with DAG(
         wait_cricra = AnbimaSensor(
             task_id="wait_cricra",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
         )
@@ -170,7 +165,7 @@ with DAG(
             task_id="fetch_cricra",
             endpoint="/feed/precos-indices/v1/cri-cra/mercado-secundario",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             do_xcom_push=True,
         )
@@ -186,7 +181,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_anbima_vna where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_anbima_vna where data_referencia != '{{macros.template_tz.convert_ts(data_interval_start)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -217,7 +212,7 @@ with DAG(
         wait_ima = AnbimaSensor(
             task_id="wait_ima",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
         )
@@ -226,7 +221,7 @@ with DAG(
             task_id="fetch_ima",
             endpoint="/feed/precos-indices/v1/indices-mais/resultados-ima",
             request_params={
-                "data": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}"
+                "data": "{{macros.template_tz.convert_ts(data_interval_start)}}"
             },
             do_xcom_push=True,
         )
@@ -242,7 +237,7 @@ with DAG(
             sql="""
                 SELECT CASE WHEN 
                     EXISTS 
-                ( SELECT * from stage_anbima_ima where data_referencia != '{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(ts),-1)}}'   ) 
+                ( SELECT * from stage_anbima_ima where data_referencia != '{{macros.template_tz.convert_ts(data_interval_start)}}'   ) 
                 THEN 0
                 ELSE 1 
                 END
@@ -284,7 +279,8 @@ with DAG(
             fetch_ima,
             store_ima,
             check_ima_date,
-            [merge_ima_tables, merge_components_ima_tables],
+            merge_ima_tables,
+            merge_components_ima_tables,
         )
 
     chain(is_business_day, [debentures, ima, cricra, vna])
