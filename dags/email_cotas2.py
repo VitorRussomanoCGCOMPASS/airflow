@@ -9,12 +9,14 @@ from FileObjects import HTML, JSON
 from airflow.exceptions import AirflowFailException
 from airflow import DAG
 from airflow.models.baseoperator import chain
-from airflow.operators.python import PythonOperator, ShortCircuitOperator
+from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from sendgrid.helpers.mail import GroupId
 
 # TODO : add group id.
+# TODO :  CHECK FOR FUNDS / CHECK FOR INDICES MUST CHECK IF ITS STRING OR WHATEVER.
+
 
 default_args = {
     "owner": "airflow",
@@ -159,7 +161,8 @@ def _raise_if_empty(list_ids: list) -> bool | None:
     from itertools import chain
 
     ids = list(chain(*list_ids))
-
+    print(ids)
+    print(type(ids))
     if not ids:
         raise AirflowFailException("List of ids is empty")
     return True
@@ -167,7 +170,7 @@ def _raise_if_empty(list_ids: list) -> bool | None:
 
 with DAG(
     "email_cotas_pl_am",
-    schedule="0 9 * * MON-FRI",
+    schedule="10 9 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql/"],
@@ -175,7 +178,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -195,12 +198,19 @@ with DAG(
         select_d1_funds = MSSQLOperator(
             task_id="select_d1_funds",
             sql=""" 
-            SELECT id, CotaFechamento , Data FROM devops
+            SELECT string_agg(id,',') as id from devops
             JOIN funds_values 
             ON id = IdCarteira 
             WHERE 
             type='funds' and dag='external_cotas_pl'  and Data='{{macros.template_tz.convert_ts(data_interval_start)}}'
              """,
+        )
+
+        check_for_funds = PythonOperator(
+            task_id="check_for_funds",
+            python_callable=_raise_if_empty,
+            op_kwargs={"list_ids": select_d1_funds.output},
+            do_xcom_push=False,
         )
 
         fetch_funds_return_d1 = BritechOperator(
@@ -232,6 +242,7 @@ with DAG(
         chain(
             funds_sql_sensor,
             select_d1_funds,
+            check_for_funds,
             [fetch_funds_return_d1, fetch_complementary_funds_data],
             merge_and_filter,
         )
@@ -299,7 +310,7 @@ with DAG(
         subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
-        parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(1587)},
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(18501)},
         is_multiple=True,
     )
 
@@ -309,14 +320,14 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_pm",
-    schedule="0 16 * * MON-FRI",
+    schedule="10 16 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
 ):
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -375,13 +386,24 @@ with DAG(
         select_d1_funds = MSSQLOperator(
             task_id="select_d1_funds",
             sql=""" 
-            SELECT id, CotaFechamento , Data FROM devops
+
+            SELECT string_agg(id,',') as id 
+            From devops
             JOIN funds_values 
             ON id = IdCarteira 
             WHERE 
             type='funds' and dag='external_cotas_pl'  and Data='{{macros.template_tz.convert_ts(data_interval_start)}}'
              """,
         )
+
+
+        check_for_funds = PythonOperator(
+            task_id="check_for_funds",
+            python_callable=_raise_if_empty,
+            op_kwargs={"list_ids": select_d1_funds.output},
+            do_xcom_push=False,
+        )
+
 
         fetch_funds_return_d1 = BritechOperator(
             task_id="fetch_funds_return_d1",
@@ -414,14 +436,18 @@ with DAG(
         chain(
             percentage_of_funds_sensor,
             select_d1_funds,
+            check_for_funds,
             [fetch_funds_return_d1, fetch_complementary_funds_data],
             merge_and_filter,
         )
         with TaskGroup("Trigger-evening") as trigger_evening:
+
+
             check_if_all_d1 = SQLCheckOperator(
                 task_id="check_if_all_d1",
                 sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
                 skip_on_failure=True,
+                negation=True
             )
 
             trigger_evening_cotas_pl = TriggerDagRunOperator(
@@ -431,7 +457,8 @@ with DAG(
             )
             chain(check_if_all_d1, trigger_evening_cotas_pl)
 
-    chain(select_d1_funds, trigger_evening)
+    chain(check_for_funds, trigger_evening)
+
     fetch_template = FileShareOperator(
         task_id="fetch_template",
         azure_fileshare_conn_id="azure-fileshare-default",
@@ -457,9 +484,10 @@ with DAG(
         subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
         to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
         html_content=render_template.output,
-        parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(18501)},
         is_multiple=True,
     )
+
 
     chain(is_business_day, [indices, funds])
     chain(is_business_day, fetch_template, render_template, send_email)
@@ -475,7 +503,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -531,7 +559,7 @@ with DAG(
             },
         )
 
-        check_for_funds = ShortCircuitOperator(
+        check_for_funds = PythonOperator(
             task_id="check_for_funds",
             python_callable=_raise_if_empty,
             op_kwargs={"list_ids": fetch_funds.output},
@@ -612,7 +640,7 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_evening",
-    schedule="0 18 * * MON-FRI",
+    schedule=None,
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
@@ -673,8 +701,11 @@ with DAG(
         select_funds = MSSQLOperator(
             task_id="select_funds",
             sql=""" 
-                SELECT britech_id FROM funds  where closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}' or closure_date is null
-                 """,
+            SELECT string_agg(id,',') as id from devops
+            JOIN funds_values 
+            ON id = IdCarteira 
+            WHERE 
+            type='funds' and dag='external_cotas_pl'  and Data='{{macros.template_tz.convert_ts(data_interval_start)}}' """,
             do_xcom_push=True,
         )
 
@@ -684,6 +715,7 @@ with DAG(
             op_kwargs={"list_ids": select_funds.output},
             do_xcom_push=False,
         )
+    
         fetch_funds_return = BritechOperator(
             task_id="fetch_funds_return",
             endpoint="/Fundo/BuscaRentabilidadeFundos",
@@ -741,22 +773,22 @@ with DAG(
             },
             do_xcom_push=True,
         )
-
         send_email = SendGridOperator(
-            task_id="send_email",
-            subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
-            to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
-            html_content=render_template.output,
-            parameters={"reply_to": "vitor.ibanez@cgcompass.com"},
-            is_multiple=True,
-        )
+        task_id="send_email",
+        subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
+        to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+        html_content=render_template.output,
+        parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(18501)},
+        is_multiple=True,
+    )
+
         chain(fetch_template, render_template, send_email)
     chain([funds, indices], report)
 
 
 with DAG(
     "email_cotas_pl_evening_complete",
-    schedule="0 18 * * MON-FRI",
+    schedule="38 16 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
@@ -764,7 +796,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -797,14 +829,21 @@ with DAG(
             },
         )
 
+        process_xcom = PythonOperator(
+            task_id="process_xcom",
+            python_callable=_process_xcom,
+            do_xcom_push=True,
+            op_kwargs={"ids": select_active_funds.output},
+        )
+
         fetch_complementary_funds_data = MSSQLOperator(
             task_id="fetch_complementary_funds_data",
             sql=""" 
-            SELECT *  SELECT britech_id, inception_date, apelido , "Data" , type 
-            FROM funds 
-            WHERE closure_date is null or closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}'
-            """,
+                SELECT britech_id,  inception_date, apelido ,type 
+                FROM funds WHERE britech_id in ({{params.ids}})
+                """,
             results_to_dict=True,
+            parameters={"ids": process_xcom.output},
         )
 
         merge = PythonOperator(

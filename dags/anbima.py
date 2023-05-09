@@ -25,7 +25,7 @@ with DAG(
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
@@ -282,5 +282,15 @@ with DAG(
             merge_ima_tables,
             merge_components_ima_tables,
         )
+
+    clean_all_stage_tables = MSSQLOperator(
+        task_id="clean_all_stage_tables",
+        sql=""" 
+        DELETE FROM stage_anbima_vna; 
+        DELETE FROM stage_anbima_ima;
+        DELETE FROM stage_anbima_cricra;
+        DELETE FROM stage_debentures
+            """,
+    )
 
     chain(is_business_day, [debentures, ima, cricra, vna])

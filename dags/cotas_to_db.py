@@ -19,18 +19,17 @@ default_args = {
 }
 
 
-# DATA INTERVAL START WILL BE SAME DAY SINCE WE ARE WORKING WITH EVERY HOUR.
 with DAG(
     "cotas_to_db",
     default_args=default_args,
     catchup=False,
-    schedule="0 * * * MON-FRI",
+    schedule="59 8-23 * * MON-FRI",
     max_active_runs=1,
 ):
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
         database="DB_Brasil",
         conn_id="mssql-default",
