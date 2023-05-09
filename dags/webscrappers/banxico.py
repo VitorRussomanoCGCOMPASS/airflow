@@ -1,14 +1,14 @@
-import requests
-from flask_api.models.currency import StageExchangeRates
-from operators.custom_sql import SQLCheckOperator
-from operators.write_audit_publish import InsertSQLOperator
-from pendulum import datetime, parser
+from collections import namedtuple
+
+from flask_api.models.currency import ExchangeRates, StageExchangeRates
+from operators.custom_sql import MSSQLOperator, SQLCheckOperator
+from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
+from pendulum import datetime
 
 from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowFailException
 from airflow.models.baseoperator import chain
-from airflow.operators.python import get_current_context
 from airflow.sensors.base import PokeReturnValue
 
 default_args = {
@@ -20,17 +20,34 @@ default_args = {
     "database": "DB_Brasil",
 }
 
-with DAG("ws_banxico", schedule=' ', default_args=default_args, catchup=False):
-    #   FIXME : SELECT * FROM HOLIDAYS ???? WHERE IS TH ID....
+
+def _json_object_hook(d):
+    return namedtuple("JsonResponse", d.keys())(*d.values())
+
+
+with DAG(
+    "ws_banxico", schedule="00 6 * * MON-FRI", default_args=default_args, catchup=False
+):
 
     is_business_day = SQLCheckOperator(
         task_id="is_business_day",
-        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
+        sql="SELECT CASE WHEN EXISTS (SELECT * FROM HOLIDAYS WHERE calendar_id = 1 and cast(date as date) = '{{ data_interval_start }}') then 0 else 1 end;",
         skip_on_failure=True,
     )
 
     @task.sensor(mode="reschedule", timeout=60 * 60)
     def scrape_banxico() -> PokeReturnValue:
+        import requests
+        from pendulum import parser
+
+        from airflow.operators.python import get_current_context
+
+        condition_met = False
+        operator_return_value = {}
+
+        context = get_current_context()
+        ds = context.get("data_interval_start")
+
         url = "https://www.banxico.org.mx/canales/singleFix.json"
 
         payload = ""
@@ -41,33 +58,49 @@ with DAG("ws_banxico", schedule=' ', default_args=default_args, catchup=False):
 
         r = requests.request("GET", url, data=payload, headers=headers)
 
-        condition_met = False
-        operator_return_value = None
-
         if r.status_code == 200:
-            operator_return_value = r.json()
+            obj = _json_object_hook(r.json())
 
-            if "fecha" in operator_return_value:
-                pendulum_datetime = parser.parse(
-                    operator_return_value.get("fecha"), strict=False
-                )
+            try:
+                date = parser.parse(obj.fecha, strict=False)
+                assert ds
+                
+                
+                print(ds)
+                print(type(ds))
+                print(date)
+                print(type(date))
 
-                context = get_current_context()
 
-                assert "task" in context
+                if ds.is_same_day(date):
 
-                ds = context["task"].render_template(
-                    "{{macros.template_tz.convert_ts(data_interval_start)}}", context
-                )
-
-                if pendulum_datetime == ds:
+                    # USD
+                    # MXN
+                    
                     condition_met = True
+                    operator_return_value.update(
+                        {
+                            "value": obj.valor,
+                            "date": ds.to_date_string(),
+                            "domestic_id": 1,
+                            "foreign_id": 2,
+                        }
+                    )
+
+            # Fail gracefully
+            except Exception as exc:
+                raise exc
+
         else:
-            AirflowFailException("URL returned the status code %s", r.status_code)
+            raise AirflowFailException("URL returned the status code %s", r.status_code)
 
         return PokeReturnValue(is_done=condition_met, xcom_value=operator_return_value)
 
     scrapped = scrape_banxico()
+
+    clean_landing_table = MSSQLOperator(
+        task_id="clean_landing_table", sql="DELETE FROM stage_exchange_rates"
+    )
 
     push_data = InsertSQLOperator(
         task_id="push_data",
@@ -75,6 +108,48 @@ with DAG("ws_banxico", schedule=' ', default_args=default_args, catchup=False):
         conn_id="mssql-default",
         table=StageExchangeRates,
         values=scrapped,
+        data_keys={"value": "valor"},
+    )
+    # TODO :  CHANGE IDS
+
+    transform_values = MSSQLOperator(
+        task_id="transform_values",
+        sql=""" 
+            UPDATE stage_exchange_rates SET value = CAST(value as float) , date = cast(date as date) where domestic_id = 1 and foreign_id = 2
+                """,
     )
 
-    chain(is_business_day, scrapped, push_data)
+    check_date = SQLCheckOperator(
+        task_id="check_date",
+        sql="""
+                SELECT CASE WHEN 
+                    EXISTS 
+                ( SELECT * from stage_exchange_rates where date != '{{macros.template_tz.convert_ts(data_interval_start)}}' and  domestic_id = 1 and foreign_id = 2 ) 
+                THEN 0
+                ELSE 1 
+                END
+                """,
+    )
+
+    merge_into_production = MergeSQLOperator(
+        task_id="merge_into_production",
+        source_table=StageExchangeRates,
+        target_table=ExchangeRates,
+    )
+
+    clean_stage_table = MSSQLOperator(
+        task_id="clean_stage_table",
+        sql=""" 
+            DELETE FROM stage_exchange_rates
+            """,
+    )
+    chain(
+        is_business_day,
+        scrapped,
+        clean_landing_table,
+        push_data,
+        transform_values,
+        check_date,
+        merge_into_production,
+        clean_stage_table,
+    )
