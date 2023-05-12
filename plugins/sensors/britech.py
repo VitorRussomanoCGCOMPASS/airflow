@@ -57,7 +57,6 @@ class BritechIndicesSensor(BaseSensorOperator):
         hook = BritechHook(conn_id=self.britech_conn_id)
         self.log.info("Poking: %s", self.endpoint)
 
-        # TODO: IF ids in xcom format
         ids = self.request_params.get("idIndice")
 
         if isinstance(ids, list):

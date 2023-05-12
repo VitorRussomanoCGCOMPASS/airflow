@@ -108,7 +108,6 @@ with DAG(
         conn_id="mssql-default",
         table=StageExchangeRates,
         values=scrapped,
-        data_keys={"value": "valor"},
     )
     # TODO :  CHANGE IDS
 
@@ -135,6 +134,8 @@ with DAG(
         task_id="merge_into_production",
         source_table=StageExchangeRates,
         target_table=ExchangeRates,
+        index_where="domestic_id = 1 and foreign_id = 2 ",
+
     )
 
     clean_stage_table = MSSQLOperator(

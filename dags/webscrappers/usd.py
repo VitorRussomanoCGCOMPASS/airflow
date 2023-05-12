@@ -44,7 +44,6 @@ with DAG(
 
         condition_met = False
         operator_return_value = {}
-        
 
         context = get_current_context()
         ds = context.get("data_interval_start")
@@ -58,7 +57,6 @@ with DAG(
         }
 
         r = requests.request("GET", url, data=payload, headers=headers)
-        
 
         if r.status_code == 200:
 
@@ -76,7 +74,7 @@ with DAG(
 
                 date = pendulum.from_format(cupom_limpo.lastUpdate, "DD/MM/YYYY")
                 assert ds
-                
+
                 print(ds)
                 print(type(ds))
                 print(date)
@@ -143,6 +141,7 @@ with DAG(
         task_id="merge_into_production",
         source_table=StageExchangeRates,
         target_table=ExchangeRates,
+        index_where="domestic_id = 3 and foreign_id = 4 ",
     )
 
     clean_stage_table = MSSQLOperator(

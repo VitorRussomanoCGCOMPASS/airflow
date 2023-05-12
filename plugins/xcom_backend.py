@@ -34,7 +34,10 @@ class CustomXComBackend(BaseXCom):
         **kwargs,
     ) -> None:
 
+        
         hook = WasbHook(wasb_conn_id="wasb-default")
+        
+        print(value)
 
         with NamedTemporaryFile(mode="w") as tmp:
 
@@ -68,7 +71,7 @@ class CustomXComBackend(BaseXCom):
                     file_size,
                 )
 
-            blob_key = f"{run_id}/{task_id}/{filename}"
+            blob_key = f"{dag_id}/{run_id}/{task_id}/{filename}"
 
             # load the local  file into Azure Blob Storage
             hook.load_file(

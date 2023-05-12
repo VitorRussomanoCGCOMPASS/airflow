@@ -84,21 +84,25 @@ class InsertSQLOperator(BaseSQLOperator):
             **kwargs,
         )
 
-    def _invoke_pre_processing(self, table: Table, normalize: bool, data_keys):
+    def _invoke_pre_processing(
+        self, table: Table, normalize: bool, data_keys, many=False
+    ) -> None:
+
+        if isinstance(self.values, list):
+            many = True
 
         columns = set([col for col in table.columns.keys()])
-
         if data_keys:
             keys = [
                 data_keys.get(col) if data_keys.get(col) is not None else col
                 for col in columns
             ]
 
-            if any(data_keys.values()) not in keys:
+            if any(data_keys[key] not in keys for key in data_keys):
                 raise ValueError(
                     "The data key argument for one or more fields are "
                     "not present in the Table model."
-                    "Check the following field namess : {}".format(
+                    "Check the following field names: {}".format(
                         set(data_keys) - columns
                     )
                 )
@@ -112,50 +116,60 @@ class InsertSQLOperator(BaseSQLOperator):
                     "data_key arguments: {}".format(list(data_keys_duplicates))
                 )
 
-            self.log.debug("Replacing data keys")
-            self.values = self._replace_keys(self.values, data_keys)
+            self.log.info("Replacing data keys %s", data_keys)
+            self.values = self._replace_keys(self.values, data_keys, many)
 
         if normalize:
             # Deletes extra keys and create key value pair with NULL in the missing keys
-            self.log.debug("Normalizing values")
-            self.values = self._normalize_dict(self.values, columns)
+            self.log.info("Normalizing values")
+
+            self.out = set()
+            self.values = self._normalize_dict(self.values, columns, many)
+
+            if self.out:
+                self.log.info("Removed extra keys %s", list(self.out))
 
     @staticmethod
-    def _replace_keys(values, data_keys):
+    def _replace_keys(value, data_keys, many: bool = False):
+        if many and value is not None:
+            return [
+                InsertSQLOperator._replace_keys(val, data_keys, many=False)
+                for val in value
+            ]
 
-        for value in values:
-            for key, new_key in data_keys.items():
-                value[new_key] = value.pop(key)
+        for key, new_key in data_keys.items():
+            value[key] = value.pop(new_key)
 
-        return values
+        return value
 
-    @staticmethod
-    def _normalize_dict(values, columns):
+    def _normalize_dict(self, value, columns, many: bool = False):
         """
-        Normalize all dictionaries in values to ensure that it contains all expected keys for the SQL model.
+        Normalize all dictionaries in value to ensure that it contains all expected keys for the SQL model.
 
         If any expected key is missing from a dictionary, it will be added with a value of `None`.
 
         Parameters
         ----------
-        values : dict | List[dict]
-            Values to be normalized
+        value : dict | List[dict]
+            value to be normalized
 
         table : Table
             SQLALCHEMY model of the table
 
         Returns
         -------
-        values
+        value
             The normalized dictionary or dictionaries with all expected keys.
 
         """
+        if many and value is not None:
+            return [self._normalize_dict(val, columns, many=False) for val in value]
 
-        for val in values:
-            val.update((col, None) for col in columns - val.keys())
-            out = [val.pop(key) for key in val.keys() - columns]
+        to_remove = columns - value.keys()
+        value.update((col, None) for col in to_remove)
+        self.out.update(to_remove)
 
-        return values
+        return value
 
     def execute(self, context: Context) -> None:
         hook = self.get_db_hook()
@@ -177,7 +191,9 @@ class InsertSQLOperator(BaseSQLOperator):
 
             conn.execute(self.table.insert(), self.values)
 
-        self.log.info("Sucessfully inserted values into table :%s", self.table.name)
+        self.log.info(
+            "Sucessfully inserted values into table: %s", self.table.name.upper()
+        )
 
 
 from sqlalchemy.sql.selectable import TableClause
@@ -197,7 +213,8 @@ class MergeSQLOperator(BaseSQLOperator):
     :type target_table: sqlalchemy.ext.declarative.api.DeclarativeMeta or sqlalchemy.schema.Table
     :param index_elements: The index elements to use for the merge operation.
     :type index_elements: list[sqlalchemy.schema.Column] or sqlalchemy.schema.Column or None
-    :param index_where: The where clause to use for the index.
+    :param index_where: The where clause to use for the index
+        (Rows that do not match the condition will not be affect at all, neither in the update or insert statement.)
     :type index_where: None
     :param set_: The columns to update in the target table. If None, only inserts will be performed.
     :type set_: Iterable[sqlalchemy.schema.Column] or Iterable[str] or None
@@ -213,7 +230,7 @@ class MergeSQLOperator(BaseSQLOperator):
         source_table: DeclarativeMeta | Table | TableClause,
         target_table: DeclarativeMeta | Table | TableClause,
         index_elements: Iterable[str] | str | None = None,
-        index_where: None = None,
+        index_where: str | None = None,
         set_: Iterable[Column] | Iterable[str] | None = None,
         holdlock: bool = True,
         **kwargs,
@@ -232,6 +249,7 @@ class MergeSQLOperator(BaseSQLOperator):
         self.holdlock = holdlock
         self.set_ = set_
         self.index_elements = index_elements
+        self.index_where = index_where
 
     @staticmethod
     def validate_columns(
@@ -315,8 +333,8 @@ class MergeSQLOperator(BaseSQLOperator):
 
     def _generate_merge_sql(
         self,
-        target_table: Table,
-        source_table: Table,
+        target_table,
+        source_table,
         holdlock: bool,
         set_,
         index_elements: None | Iterable[str] = None,
@@ -357,7 +375,7 @@ class MergeSQLOperator(BaseSQLOperator):
 
         sql = f""" 
                 MERGE {target_table.name} {"WITH (HOLDLOCK) as target" if holdlock else "as target"}
-                USING {source_table.name} as source
+                USING {self._genenerate_partition_stmt(source_table, self.index_where)} AS source
                 ON {self.generate_on_clause(primary_keys=target_table_pks)}
 
                 WHEN NOT MATCHED  BY TARGET THEN
@@ -371,16 +389,30 @@ class MergeSQLOperator(BaseSQLOperator):
 
         return sql + " ;"
 
+    @staticmethod
+    def _genenerate_partition_stmt(
+        source_table,
+        index_where
+    ) -> str:
+        if index_where:
+            return f""" 
+            ( 
+            SELECT * FROM {source_table.name}
+            WHERE {index_where}
+            ) 
+            """
+        return source_table.name
+
     def execute(self, context: Context):
 
         hook = self.get_db_hook()
 
         # Transform into Table Object for consistency
-        if not isinstance(self.target_table, Table):
-            self.target_table = getattr(self.target_table, "__table__")
-
-        if not isinstance(self.source_table, Table):
+        if isinstance(self.source_table, (DeclarativeMeta, TableClause)):
             self.source_table = getattr(self.source_table, "__table__")
+
+        if isinstance(self.target_table, (DeclarativeMeta, TableClause)):
+            self.target_table = getattr(self.target_table, "__table__")
 
         sql = self._generate_merge_sql(
             source_table=self.source_table,
@@ -390,12 +422,10 @@ class MergeSQLOperator(BaseSQLOperator):
             index_elements=self.index_elements,
         )
 
-        self.log.debug("Generated sql: %s", sql)
-
-        hook.run(sql, handler=None)
+        self.log.info("Generated sql: %s", sql)
 
         self.log.info(
-            "Sucessfuly merged tables source : %s and  target :  %s",
-            self.source_table.name,
-            self.target_table.name,
+            f""" 
+            Sucessfuly merged tables with source : {self.source_table.name} and target : {self.target_table.name}
+            { "With partition: {}".format(self.index_where) if self.index_where else ""}"""
         )

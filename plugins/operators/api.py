@@ -157,3 +157,7 @@ class AnbimaOperator(BaseOperator):
 
         # response.encoding = response.apparent_encoding
         return response.json()
+
+
+class CoreAPI(BaseOperator):
+    pass

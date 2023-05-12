@@ -3,10 +3,15 @@ from typing import Any, Callable, Iterable, Mapping, NoReturn, Sequence, Type
 
 from FileObjects import MSSQLSource, PostgresSource, SQLSource
 
-from airflow.exceptions import (AirflowException, AirflowFailException,
-                                AirflowSkipException)
+from airflow.exceptions import (
+    AirflowException,
+    AirflowFailException,
+    AirflowSkipException,
+)
 from airflow.providers.common.sql.hooks.sql import (
-    fetch_all_handler, return_single_query_results)
+    fetch_all_handler,
+    return_single_query_results,
+)
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
@@ -98,8 +103,6 @@ class CustomBaseSQLOperator(BaseSQLOperator):
 
         processed_output = self._process_output(output, hook.descriptions)
 
-        # json_safe_output = json.dumps(processed_output, default=self.convert_types)
-
         return self.WRAPPER(processed_output, self.stringify_dict)
 
     @abc.abstractmethod
@@ -154,7 +157,6 @@ class GeneralSQLExecuteQueryOperator(CustomBaseSQLOperator):
         return value
 
 
-# FIXME : IF THERE IS NO OUTPUT. IT STILL TRIES TO LOOP
 class MSSQLOperator(CustomBaseSQLOperator):
 
     WRAPPER = MSSQLSource
@@ -231,90 +233,6 @@ class PostgresOperator(CustomBaseSQLOperator):
         return results
 
 
-import json
-from dataclasses import dataclass, field
-from typing import Literal
-
-
-@dataclass
-class StoredProcedure:
-    sp: str
-    type: Literal["hard"] | Literal["soft"]
-    schema: str = ".dbo"
-    params: list[dict] | dict | None = None
-    description: str | None = None
-
-    built_stored_procedure: str = field(init=False)
-    result: bool | None = field(init=False)
-
-    def __post_init__(self):
-        self.result = None
-        self.built_stored_procedure = self._parse_stored_procedure(
-            self.sp, self.params, self.schema
-        )
-
-    @staticmethod
-    def _parse_stored_procedure(
-        sp: str, params: list[dict] | dict | None, schema: str
-    ) -> str:
-        # TODO : WE PARSE THE STORED PROCEUDRES STATEMNT
-        return "a"
-
-
-@dataclass
-class Checkpoint:
-    checkpoint: str
-    validations: list[StoredProcedure] | StoredProcedure | str
-    description: str | None = None
-
-    def __repr__(self) -> str:
-        return f"{self.checkpoint} "
-
-
-class CheckV2(BaseSQLOperator):
-    # checkpoint can be either a path or the obj.
-    template_fields: Sequence[str] = "checkpoint"
-    template_ext: Sequence[str] = ".json"
-    template_fields_renderers = {"checkpoint": ".json"}
-
-    def __init__(
-        self,
-        *,
-        checkpoint: Checkpoint | str,
-        conn_id: str | None = None,
-        database: str | None = None,
-        skip_on_failure: bool = False,
-        **kwargs,
-    ) -> None:
-
-        if database is not None:
-            hook_params = kwargs.pop("hook_params", {})
-            kwargs["hook_params"] = {"database": database, **hook_params}
-
-        super().__init__(database=database, **kwargs, conn_id=conn_id)
-        self.skip_on_failure = skip_on_failure
-        self.checkpoint = checkpoint
-
-    # One checkpoint has multiple validations
-    # How can we generate the results and get the type of the validation
-    def execute(self, **context):
-
-        if isinstance(self.checkpoint, str):
-            checkpoint = json.loads(self.checkpoint)
-            self.checkpoint = Checkpoint(**checkpoint)
-
-        self.log.info("Executing Checkpoint : %s ", self.checkpoint.checkpoint)
-
-        # WE ACCESS THE PARSED STORED PROCEDURE
-        # WE EXECUTE THEM
-        # WE STORE THE RESULTS
-
-        # ACTUALLY, WE CAN jUST STORE THE RESULTS IN THE OBjECT.
-
-        if isinstance(self.checkpoint.validations, StoredProcedure):
-            pass
-
-
 class SQLCheckOperator(BaseSQLOperator):
     """
     Performs checks against a db. The ``SQLCheckOperator`` expects
@@ -364,6 +282,7 @@ class SQLCheckOperator(BaseSQLOperator):
         database: str | None = None,
         parameters: Iterable | Mapping | None = None,
         skip_on_failure: bool = False,
+        negation: bool = False,
         **kwargs,
     ) -> None:
 
@@ -375,11 +294,17 @@ class SQLCheckOperator(BaseSQLOperator):
         self.sql = sql
         self.parameters = parameters
         self.skip_on_failure = skip_on_failure
+        self.negation = negation
 
     def execute(self, context: Context) -> None:
         self.log.info("Executing SQL check: %s", self.sql)
         records = self.get_db_hook().get_first(self.sql, self.parameters)
 
+        if self.negation:
+            self.log.info("Negating bool records")
+            _negate = lambda record: not record
+            records = list(map(_negate, records))
+        
         self.log.info("Record: %s", records)
 
         if not records:
