@@ -14,6 +14,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from sendgrid.helpers.mail import GroupId
 
+
 # TODO : add group id.
 # TODO :  CHECK FOR FUNDS / CHECK FOR INDICES MUST CHECK IF ITS STRING OR WHATEVER.
 

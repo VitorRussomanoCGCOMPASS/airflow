@@ -423,6 +423,7 @@ class MergeSQLOperator(BaseSQLOperator):
         )
 
         self.log.info("Generated sql: %s", sql)
+        hook.run(sql, handler=None)
 
         self.log.info(
             f""" 
