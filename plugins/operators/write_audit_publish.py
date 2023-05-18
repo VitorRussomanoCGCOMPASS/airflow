@@ -221,6 +221,13 @@ class MergeSQLOperator(BaseSQLOperator):
     :param holdlock: Whether to hold a lock during the merge operation.
     :type holdlock: bool
     """
+    
+
+
+    template_fields: Sequence[str] = ("index_where",)
+    
+
+
 
     def __init__(
         self,
