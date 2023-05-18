@@ -31,7 +31,7 @@ class AnbimaSensor(BaseSensorOperator):
         self.anbima_conn_id = anbima_conn_id
 
     def poke(self, context) -> bool:
-        hook = AnbimaHook(conn_id=self.anbima_conn_id)
+        hook = AnbimaHook(conn_id=self.anbima_conn_id,method='GET')
         self.log.info("Poking: %s", self.endpoint)
 
         try:

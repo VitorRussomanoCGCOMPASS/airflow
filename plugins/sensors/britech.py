@@ -5,7 +5,7 @@ from airflow.utils.operator_helpers import determine_kwargs
 from airflow.exceptions import AirflowException
 from itertools import chain
 
-
+    
 # FIXME: CHECK IF FAILS SILENTLY ON 404
 
 
@@ -54,7 +54,7 @@ class BritechIndicesSensor(BaseSensorOperator):
             404 error
 
         """
-        hook = BritechHook(conn_id=self.britech_conn_id)
+        hook = BritechHook(conn_id=self.britech_conn_id,method='GET')
         self.log.info("Poking: %s", self.endpoint)
 
         ids = self.request_params.get("idIndice")
@@ -145,7 +145,7 @@ class BritechFundsSensor(BaseSensorOperator):
             404 error
         """
 
-        hook = BritechHook(conn_id=self.britech_conn_id)
+        hook = BritechHook(conn_id=self.britech_conn_id,method='GET')
         self.log.info("Poking: %s", self.endpoint)
 
         # TODO : GET IN THE DATABASE
@@ -239,7 +239,7 @@ class BritechEmptySensor(BaseSensorOperator):
         self.britech_conn_id = britech_conn_id
 
     def poke(self, context):
-        hook = BritechHook(conn_id=self.britech_conn_id)
+        hook = BritechHook(conn_id=self.britech_conn_id,method='GET')
         self.log.info("Poking: %s", self.endpoint)
 
         try:
