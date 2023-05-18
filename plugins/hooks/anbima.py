@@ -4,14 +4,16 @@ from typing import Any, Union
 import requests
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
+from hooks.custom_base import CustomBaseHook, Method
 
+class AnbimaHook(CustomBaseHook):
+    @property
+    def allowed_methods(self):
+        return (Method["GET"])
 
-class AnbimaHook(BaseHook):
-    def __init__(self, conn_id, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(self, conn_id, method="GET", **kwargs) -> None:
+        super().__init__(method= method ,**kwargs)
         self._session = None
-        self.method = "GET"
         self._conn_id = conn_id
 
     def _get_conn(self):
@@ -58,6 +60,7 @@ class AnbimaHook(BaseHook):
         headers: Union[dict, None] = None,
         extra_options: Union[dict, None] = None,
         request_params: Union[dict, None] = None,
+        json: Union[dict, None] = None,
     ) -> requests.Response:
         """_summary_
 
@@ -79,6 +82,8 @@ class AnbimaHook(BaseHook):
         -------
         requests.Response
         """
+
+
         config = self.get_connection(self._conn_id)
         self.config = config
 

@@ -4,14 +4,17 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
+from hooks.custom_base import CustomBaseHook, Method
 
 
-class BritechHook(BaseHook):
+class BritechHook(CustomBaseHook):
+    @property
+    def allowed_methods(self):
+        return (Method["GET"], Method["POST"])
+
     def __init__(self, conn_id, method="GET", **kwargs) -> None:
-        super().__init__(**kwargs)
+        super().__init__(method=method, **kwargs)
         self._session = None
-        self.method = method
         self._conn_id = conn_id
 
     def _get_conn(self):
@@ -154,3 +157,6 @@ class BritechHook(BaseHook):
         except requests.exceptions.ConnectionError as ex:
             self.log.warning("%s Tenacity will retry to execute the operation", ex)
             raise ex
+
+
+
