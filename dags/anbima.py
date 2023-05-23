@@ -56,7 +56,6 @@ with DAG(
             task_id="store_vna",
             table=anbima.StageVNA,
             values=fetch_vna.output,
-            normalize=False,
         )
 
         check_vna_date = SQLCheckOperator(
@@ -169,7 +168,7 @@ with DAG(
             },
             do_xcom_push=True,
         )
-
+        
         store_cricra = InsertSQLOperator(
             task_id="store_cricra",
             table=anbima.StageCriCra,
@@ -293,4 +292,4 @@ with DAG(
             """,
     )
 
-    chain(is_business_day, [debentures, ima, cricra, vna])
+    chain(is_business_day, [debentures, ima, cricra, vna],clean_all_stage_tables)
