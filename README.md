@@ -181,6 +181,7 @@ O Airflow é considerado uma distribuição descentralizada porque permite a exe
 --------------
 
 ## `Tasks`: Principios de Design 
+----------------
 
 **[Atomicidade]**
 
@@ -209,8 +210,6 @@ Em resumo, a atomicidade no Airflow garante a execução confiável e consistent
 
 
 
-
-
 <br></br>
 
 ## `XComs`
@@ -232,16 +231,18 @@ Um XCom é identificado por uma chave, assim como o `task_id` e `dag_id`. E pode
 - Postgres: 1 Go
 - MySQL: 64 KB
 
+<br></br>
 
-**[`Our Way`]**
+### `Our Way` : `Customizable XCom`
+-----
 
 Identificamos duas principais limitações dentro da proposta do `XCom` como apresentado naturalmente pelo Airflow. 
 
-### Limitações de tamanho dos dados
+**[Limitações de tamanho dos dados]**
 
 De forma a contornar a limitação do tamanho dos dados, a solução que desenvolvemos foi alavancar o funcionamento original do Airflow e integrar o `Blob Storage` como solução de armazenamento dos dados. Assim, a base de dados `metadata`  ainda é responsável por armazenar a chave associada ao `XCom`, porém, a serialização garante que o campo `value` receba uma referência à localização do arquivo dentro do `Blob Storage`, ao invés do valor de fato. Da mesma forma, no momento de deserialização, quando é recuperado o valor, é possível buscar o arquivo a partir da referência dentro do servidor de `Blob Storage` e então o arquivo é deserializado em um objeto compatível com python.
 
-### Não há um serializador `one-size-fits-all` 
+**[Não há um serializador `one-size-fits-all`]**
 
 Ao invés de utilizarmos um único serializador para todos os tipos de dados, nosso `approach` foi permitir múltiplos métodos de serialização para cada tipo de arquivo, a partir da construção de múltiplos objetos associados a uma extensão de arquivo. Mas ao mesmo tempo, associar cada tipo de arquivo a um único método de deserialização. 
 
@@ -276,6 +277,8 @@ class JSON_B(object):
 
 <br>  </br>
 
+# `Dados`
+
 
 ## Extract Load and Transform - `ELT`
 --------
@@ -284,12 +287,6 @@ class JSON_B(object):
 
 O Airflow, em seu `core` é um orquestrador, e assim, delegar processamento ao seu servidor deve ser feito com cautela. Idealmente, a maioria da lógica de transformação deve ser deixada para os sistemas de origem ou de destino, para assim aproveitar a capacidade de todas as ferramentas do ecossistema de dados, evitando assim sobrecarregar o servidor Airflow, e consequentemente a quebra dos fluxos e processos.
 
-
-**[`Our Way`]**
-
-```
-                                Fonte Externa --> Pré-processados (Operadores) --> Armazenados --> Transformados (SQL)
-```
 
 **[Beneficios]**
 
@@ -302,18 +299,60 @@ O Airflow, em seu `core` é um orquestrador, e assim, delegar processamento ao s
 4. Centralização do `Business Logic`: Com o **ELT**, a lógica de transformação de dados é movida para o data warehouse, onde é executada usando as funcionalidades e recursos internos da plataforma. Isso permite que todas as transformações e manipulações de dados sejam centralizadas em um único local, em vez de serem distribuídas em várias etapas em um pipeline ETL. Essa centralização simplifica a manutenção e gerenciamento da lógica de negócio, tornando mais fácil entender, atualizar e corrigir as transformações aplicadas aos dados.
 
 
+<br></br>
+
+### `Our Way` : `Write Audit Publish`
+--------
+
+
+```
+    Fonte Externa --> Pré-processados (Operadores) --> Armazenados Temporariamente (SQL) --> Validados (SQL) -->  Transformados (SQL) --> Armazenados em Produção (SQL)
+```
+
+**[Pontos de Destaque]**
+
+
+[_Pré-processamento_]
+
+Envolve a seguintes etapas, 
+
+    - Normalização dos dicionários:  Garante que os dados contém todas as chaves esperadas pela tabela do SQL. Isso envolve remover - e alertar - dados extras, mas também inserir valores nulos onde não há dado.
+    - Data Keys: Faz as substituições das chaves necessárias.
+
+    Esses passos são necessários para que se possar utilizar uma conexão de rápida execução. Dessa forma, embora há a introdução de processamento dentro do Airflow, no total, há uma redução significativa de processamento.
+
+
+[`MergeOperator`] 
+
+    É responsável por fazer a transição dos dados do ambiente temporário para o ambiente de produção, ao passo que garante a **Idempotência** e **Atomicidade** dessas transações. Seu funcionamento se baseia em verificar por correspondências nas bases de dados, e então:
+
+    1. Dados que não apresentam conflitos - estão no ambiente temporário mas não de produção - são inseridos normalmente em Produção.
+    2. Dados que apresentam conflitos - estão em ambos ambientes - , são opcionalmente utilizados para atualizar os dados presentes em Produção.
+    3. Ainda, para os dados que não apresentam conflitos - estão no ambiente de produção mas não no temporário - há a possibilidade de deleta-los.
+   
+    Isso é possível através dos seguintes argumentos:
+
+    - index_elements: As colunas dos dados que devem ser utilizados para a operação - Seja ela Atualizar, Inserir ou Deletar.
+    - set: As colunas de `index_elements` que devem ser atualizadas, na presença de conflito. 
+    - index_where: O subset do conjunto de dados que deve ser utilizado. Pode ser qualquer condição.
+    - In development: delete
+
+
 
 
 
 
 <br> </br>
 
-## Estruturação dos dados: `4-Tiers`
+## Estruturação dos dados : `4-Tiers`
 --------
-Embora tenha sido discutido o processo em geral de um dado qualquer, o conceito de `Extract Load and Transform` na realidade se interliga com a estrutura do nosso ecossistema de dados como um todo. Onde foi desenhados diversos níveis de armazenamento de dados, dependendo de sua qualidade.
 
+A perspectiva de processos em termos de dados foi abordado previamente em `ELT` a partir do framework de `Write-Audit-Publish` . Porém, também se fez necessário o desenvolvimento de um conceito, em termos estruturais, do ecossistema de dados, que fosse acoplado e sinérgico com o framework. Para isso, seguimos o que chamamos de `4-Tiers`.  
 
+ <br></br>
 
+### `Our-Way` : `4-Tiers`
+--------
 **[Adquirindo os dados]**
 
 Para preservar a **atomicidade** e **idempotência**, se faz necessário garantir que os dados a entrada dos dados no ecossistema só ocorrerá se o dado apresenta a identificação correta, tal como data ou outro requerimento específico. Para isso, é utilizado uma série de **Sensores** que permitirão a continuação do processo, ou seja, o contato com os demais **Operadores**, apenas na presença das condições corretas em termos de identidade dos dados.
@@ -340,7 +379,40 @@ Os dados das `Stage Tables` são validados tanto em termos de `Business-Logic` q
 
 Entre um dado de produção e um dado para `data-analysis` há uma grande quantidade de transformações e lógica. Assim, para os dados que não são exclusivamente usados para suportar processos, mas também são de interesse de usuários para análise, as transformações necessárias são aplicadas e os dados armazenados em `Data-science Tables`. Dessa forma, somos capazes de diminuir o `client-side processing` e manter a consistência das transformações, pois podemos alocá-las corretamente tendo uma visão dos processos como um todo e como isso pode impactar o dado.
 
+```mermaid
+C4Context
+title Inter-Communication System (XComs)
 
+Person(customerA, "Banking Customer A", "A customer of the bank, with personal bank accounts.")
+Person(customerB, "Banking Customer B")
+Person_Ext(customerC, "Banking Customer C")
+System(SystemAA, "Internet Banking System", "Allows customers to view information about their bank accounts, and make payments.")
+
+Person(customerD, "Banking Customer D", "A customer of the bank, <br/> with personal bank accounts.")
+
+Enterprise_Boundary(b1, "BankBoundary") {
+
+  SystemDb_Ext(SystemE, "Mainframe Banking System", "Stores all of the core banking information about customers, accounts, transactions, etc.")
+
+  System_Boundary(b2, "BankBoundary2") {
+    System(SystemA, "Banking System A")
+    System(SystemB, "Banking System B", "A system of the bank, with personal bank accounts.")
+  }
+
+  System_Ext(SystemC, "E-mail system", "The internal Microsoft Exchange e-mail system.")
+  SystemDb(SystemD, "Banking System D Database", "A system of the bank, with personal bank accounts.")
+
+  Boundary(b3, "BankBoundary3", "boundary") {
+    SystemQueue(SystemF, "Banking System F Queue", "A system of the bank, with personal bank accounts.")
+    SystemQueue_Ext(SystemG, "Banking System G Queue", "A system of the bank, with personal bank accounts.")
+  }
+}
+
+BiRel(customerA, SystemAA, "Uses")
+BiRel(SystemAA, SystemE, "Uses")
+Rel(SystemAA, SystemC, "Sends e-mails", "SMTP")
+Rel(SystemC, customerA, "Sends e-mails to")
+```
 
 ```mermaid
 stateDiagram
