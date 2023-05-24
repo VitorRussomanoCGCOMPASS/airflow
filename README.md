@@ -272,6 +272,42 @@ class JSON_B(object):
 ```
 
 
+### Funcionamento
+
+
+```mermaid
+
+flowchart LR
+
+    A -.-> B
+
+    subgraph Node 1
+        A[TaskA]
+    end
+    subgraph Node 2
+    B[Task B]
+    end
+    
+    A --> Serializer{Serializer} 
+    Serializer -.->   id1[[Type 2 Serializer]]
+    Serializer ==> id2[[Type 1 Serializer]] 
+    Serializer -.->   id3[[Type n Serializer]]
+
+    id2 -->|write value| Blob[(Blob Storage)]
+    id2 -->|write key| db[(Metadata DB)]
+
+    B --> Deserializer((Deserializer))
+
+    Deserializer -->|1. read key| db --> |2. read key:file | Blob -->|3. File| Deserializer --> |4.  value| B
+    linkStyle 7 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 8 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 9 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 10 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 11 stroke-width:2px,fill:none,stroke:red;
+
+
+
+```
 
 
 
@@ -379,6 +415,7 @@ Os dados das `Stage Tables` são validados tanto em termos de `Business-Logic` q
 
 Entre um dado de produção e um dado para `data-analysis` há uma grande quantidade de transformações e lógica. Assim, para os dados que não são exclusivamente usados para suportar processos, mas também são de interesse de usuários para análise, as transformações necessárias são aplicadas e os dados armazenados em `Data-science Tables`. Dessa forma, somos capazes de diminuir o `client-side processing` e manter a consistência das transformações, pois podemos alocá-las corretamente tendo uma visão dos processos como um todo e como isso pode impactar o dado.
 
+
 ```mermaid
 
 flowchart LR
@@ -393,21 +430,14 @@ flowchart LR
     end
     
     A --> Serializer{Serializer} 
-    Serializer -.->   id1[[Type 2 Serializer]]
-    Serializer ==> id2[[Type 1 Serializer]] 
-    Serializer -.->   id3[[Type n Serializer]]
 
-    id2 -->|Value| Blob[(Blob Storage)]
-    id2 -->|Key| db[(Metadata DB)]
+    Serializer -->|write| db[(Metadata DB)]
 
-    B --> Deserializer((Deserializer))
+    B --> Deserializer((Deserializer))-->|read| db -->  |value| B
+    linkStyle 3 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 4 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 5 stroke-width:2px,fill:none,stroke:red;
 
-    Deserializer -->|1. Fetch key| db --> |2. Fetch file under key| Blob -->|3. File| Deserializer --> |4. Returns value| B
-    linkStyle 7 stroke-width:2px,fill:none,stroke:red;
-    linkStyle 8 stroke-width:2px,fill:none,stroke:red;
-    linkStyle 9 stroke-width:2px,fill:none,stroke:red;
-    linkStyle 10 stroke-width:2px,fill:none,stroke:red;
-    linkStyle 11 stroke-width:2px,fill:none,stroke:red;
 
 
 
