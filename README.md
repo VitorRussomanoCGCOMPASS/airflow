@@ -380,47 +380,35 @@ Os dados das `Stage Tables` são validados tanto em termos de `Business-Logic` q
 Entre um dado de produção e um dado para `data-analysis` há uma grande quantidade de transformações e lógica. Assim, para os dados que não são exclusivamente usados para suportar processos, mas também são de interesse de usuários para análise, as transformações necessárias são aplicadas e os dados armazenados em `Data-science Tables`. Dessa forma, somos capazes de diminuir o `client-side processing` e manter a consistência das transformações, pois podemos alocá-las corretamente tendo uma visão dos processos como um todo e como isso pode impactar o dado.
 
 ```mermaid
-C4Context
-title Inter-Communication System (XComs)
 
-Person(customerA, "Banking Customer A", "A customer of the bank, with personal bank accounts.")
-Person(customerB, "Banking Customer B")
-Person_Ext(customerC, "Banking Customer C")
-System(SystemAA, "Internet Banking System", "Allows customers to view information about their bank accounts, and make payments.")
+flowchart LR
 
-Person(customerD, "Banking Customer D", "A customer of the bank, <br/> with personal bank accounts.")
+    A -.-> B
 
-Enterprise_Boundary(b1, "BankBoundary") {
+    subgraph Node 1
+        A[TaskA]
+    end
+    subgraph Node 2
+    B[Task B]
+    end
+    
+    A --> Serializer{Serializer} 
+    Serializer -.->   id1[[Type 2 Serializer]]
+    Serializer ==> id2[[Type 1 Serializer]] 
+    Serializer -.->   id3[[Type n Serializer]]
 
-  SystemDb_Ext(SystemE, "Mainframe Banking System", "Stores all of the core banking information about customers, accounts, transactions, etc.")
+    id2 -->|Value| Blob[(Blob Storage)]
+    id2 -->|Key| db[(Metadata DB)]
 
-  System_Boundary(b2, "BankBoundary2") {
-    System(SystemA, "Banking System A")
-    System(SystemB, "Banking System B", "A system of the bank, with personal bank accounts.")
-  }
+    B --> Deserializer((Deserializer))
 
-  System_Ext(SystemC, "E-mail system", "The internal Microsoft Exchange e-mail system.")
-  SystemDb(SystemD, "Banking System D Database", "A system of the bank, with personal bank accounts.")
+    Deserializer -->|1. Fetch key| db --> |2. Fetch file under key| Blob -->|3. File| Deserializer --> |4. Returns value| B
+    linkStyle 7 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 8 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 9 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 10 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 11 stroke-width:2px,fill:none,stroke:red;
 
-  Boundary(b3, "BankBoundary3", "boundary") {
-    SystemQueue(SystemF, "Banking System F Queue", "A system of the bank, with personal bank accounts.")
-    SystemQueue_Ext(SystemG, "Banking System G Queue", "A system of the bank, with personal bank accounts.")
-  }
-}
 
-BiRel(customerA, SystemAA, "Uses")
-BiRel(SystemAA, SystemE, "Uses")
-Rel(SystemAA, SystemC, "Sends e-mails", "SMTP")
-Rel(SystemC, customerA, "Sends e-mails to")
-```
 
-```mermaid
-stateDiagram
-    [*] --> Still
-    Still --> [*]
-
-    Still --> Moving
-    Moving --> Still
-    Moving --> Crash
-    Crash --> [*]
 ```
