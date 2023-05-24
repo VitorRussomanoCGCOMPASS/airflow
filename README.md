@@ -272,7 +272,20 @@ class JSON_B(object):
 ```
 
 
-### Funcionamento
+### `Overview` 
+----------
+
+
+**[`XCom`]**
+
+1. Given a dependency between two tasks, `Task A` and `Task B`. Then, once `Task A` is completed, it will call the `Serializer` which will generate a identifier - containing the dag_id, run_id and task_id - and will store the serialized value under `Xcom Table` on the Metadata database.
+   
+2. Therefore, if any further tasks need the data, such as `Task B`, it will call for the `Deserializer`, which will fetch under the identifier of the upstream task the value, deserialize into a python object, and provide it to the downstream dependent task, such as `Task B`.
+
+
+This way, we can share data between multiple instances of workers, even thought they are not, physically, in the same node.
+
+
 
 
 ```mermaid
@@ -282,7 +295,7 @@ flowchart LR
     A -.-> B
 
     subgraph Node 1
-        A[TaskA]
+        A[Task A]
     end
     subgraph Node 2
     B[Task B]
@@ -308,6 +321,47 @@ flowchart LR
 
 
 ```
+
+**[`Our Way`]**
+
+1. Here, once the upstream task is finalized, it calls for the `Serializer` along with its data. There, it will check for the instance of the object provided, and call for the most appropariate customized serializer, if there is one, otherwise it will default to JSON.
+   
+2. Then, simirlarly as before, it will generate a identifier - containing the dag_id , run_id and task_id - while also generating a key. So, now, instead of storing the identifier:value pair, the key will act as the value and will be stored under that identifier in the `Xcom Table` on the Metadata database.
+   
+3. Now, the `Serializer` has the key stored in the Metadata database, and also a serialized value, which then can be stored as a file in the `Blob Storage` using the key as the path, i,e. `CONTAINER_NAME/key/uuid.FILEEXTENSION`.
+
+5. Now once the downstream tasks are initialized, and they have a dependency on any tasks that have generated an `Xcom` value, they will call for the `Deserializer` which will search for the key under the identifier and use this key to retrieve the file in the `Blob Storage`, which then can be turned into an appropriate python object for the `task` to use.
+
+
+
+
+```mermaid
+
+flowchart LR
+
+    A -.-> B
+
+    subgraph Node 1
+        A[TaskA]
+    end
+    subgraph Node 2
+    B[Task B]
+    end
+    
+    A --> Serializer{Serializer} 
+
+    Serializer -->|write| db[(Metadata DB)]
+
+    B --> Deserializer((Deserializer))-->|read| db -->  |value| B
+    linkStyle 3 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 4 stroke-width:2px,fill:none,stroke:red;
+    linkStyle 5 stroke-width:2px,fill:none,stroke:red;
+
+
+
+
+```
+
 
 
 
@@ -414,31 +468,3 @@ Os dados das `Stage Tables` são validados tanto em termos de `Business-Logic` q
 **[Tier 4: `Ready-to-Analysis Data`]**
 
 Entre um dado de produção e um dado para `data-analysis` há uma grande quantidade de transformações e lógica. Assim, para os dados que não são exclusivamente usados para suportar processos, mas também são de interesse de usuários para análise, as transformações necessárias são aplicadas e os dados armazenados em `Data-science Tables`. Dessa forma, somos capazes de diminuir o `client-side processing` e manter a consistência das transformações, pois podemos alocá-las corretamente tendo uma visão dos processos como um todo e como isso pode impactar o dado.
-
-
-```mermaid
-
-flowchart LR
-
-    A -.-> B
-
-    subgraph Node 1
-        A[TaskA]
-    end
-    subgraph Node 2
-    B[Task B]
-    end
-    
-    A --> Serializer{Serializer} 
-
-    Serializer -->|write| db[(Metadata DB)]
-
-    B --> Deserializer((Deserializer))-->|read| db -->  |value| B
-    linkStyle 3 stroke-width:2px,fill:none,stroke:red;
-    linkStyle 4 stroke-width:2px,fill:none,stroke:red;
-    linkStyle 5 stroke-width:2px,fill:none,stroke:red;
-
-
-
-
-```
