@@ -10,9 +10,9 @@ img[src*='#center'] {
     display: block;
     margin: auto;
 }
+
 img[alt=drawing] { width: 500px; }
 
-</style>
 
 
 <style>
@@ -171,10 +171,7 @@ O Airflow é considerado uma distribuição descentralizada porque permite a exe
 * _Executor Backend_: O Executor Backend é uma fila ou sistema de mensagens usado para coordenar a comunicação entre o Scheduler e os Workers. Ele garante que as tarefas sejam atribuídas corretamente aos Workers disponíveis para execução e permite que o Scheduler monitore o progresso e o status das tarefas em execução.
 
 <br></br>
-
-![drawing](https://github.com/VitorRussomanoCGCOMPASS/airflow/blob/dev/readmeimgs/arch-diag-basic.png?raw=True#center)
-
-
+![Alt text](readmeimgs/arch-diag-basic.png)
 
 
 <br></br>
@@ -188,8 +185,7 @@ O Airflow é considerado uma distribuição descentralizada porque permite a exe
 Também conhecido como **Tudo ou Nada**. A Atomicidade é a propriedade de uma **operação como uma unidade indivisível e irredutível**, onde todas suas responsabilidades são concluídas com sucesso ou nenhuma delas. No contexto do processamento de dados e fluxos de trabalho, a atomicidade é importante para garantir a integridade e a consistência dos dados, evitando resultados indesejados que podem impactar o estado do sistema em caso de falhas.
 <br></br>
 
-
-![drawing](https://github.com/VitorRussomanoCGCOMPASS/airflow/blob/dev/readmeimgs/ATOMici.png?raw=True#center)
+![Alt text](readmeimgs/ATOMici.png)
 <center><i>Atomicidade garante que todas suas responsabilidades são concluídas com sucesso ou nenhuma delas.</i></center>
 
 <br></br>
@@ -199,8 +195,7 @@ Também conhecido como **Tudo ou Nada**. A Atomicidade é a propriedade de uma *
 
 A idempotência refere-se à propriedade de uma tarefa que, quando executada múltiplas vezes com os mesmos dados de entrada, produz o mesmo resultado como se tivesse sido executada apenas uma vez. Em outras palavras, a **repetição da tarefa não causa efeitos adicionais além do resultado já obtido**. 
 A idempotência é importante para garantir a consistência dos resultados ao reexecutar tarefas, que se faz particularmente útil na presença de falhas ou quando o fluxo de trabalho é executado novamente.
-
-![drawing](https://github.com/VitorRussomanoCGCOMPASS/airflow/blob/dev/readmeimgs/idempot.png?raw=True#center)
+![Alt text](readmeimgs/idempot.png)
 <center><i>Idempotência garante resultados constantes em todas instâncias de uma mesma tarefa.</i></center>
 
 <br></br>
