@@ -162,12 +162,11 @@ class CoreAPI(ApiOperator):
 
     def __init__(
         self,
-        core_conn_id="anbima-api",
+        core_conn_id="core-api",
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.core_conn_id = core_conn_id
-
     
     @property
     def conn_id(self):

@@ -221,13 +221,8 @@ class MergeSQLOperator(BaseSQLOperator):
     :param holdlock: Whether to hold a lock during the merge operation.
     :type holdlock: bool
     """
-    
-
 
     template_fields: Sequence[str] = ("index_where",)
-    
-
-
 
     def __init__(
         self,
@@ -254,9 +249,9 @@ class MergeSQLOperator(BaseSQLOperator):
         self.source_table = source_table
         self.target_table = target_table
         self.holdlock = holdlock
-        self.set_ = set_
         self.index_elements = index_elements
         self.index_where = index_where
+        self.set_ = self.set_
 
     @staticmethod
     def validate_columns(
@@ -268,12 +263,12 @@ class MergeSQLOperator(BaseSQLOperator):
         for col in columns:
             if isinstance(col, str):
                 # We make sure that there is a column with that name for safety
+
                 try:
                     col = getattr((getattr(table, "columns")), col)
                 except AttributeError:
-                    raise Exception(
-                        "There is no column named %s in table %s", col, table
-                    )
+                    raise Exception(f"There is no column named {col} in table {table}")
+
             if isinstance(col, Column):
                 if index_elements and col.name not in index_elements:
                     raise Exception(
@@ -297,11 +292,12 @@ class MergeSQLOperator(BaseSQLOperator):
         str
             The ON clause for the MERGE statement.
         """
-        stmt = f'target."{primary_keys[0]}" = source."{primary_keys[0]}"'
+        fkey, key_list = primary_keys[0], primary_keys[:1]
 
-        if len(primary_keys) > 1:
-            for pk in primary_keys[1:]:
-                stmt += f' AND target."{pk}" = source."{pk}"'
+        stmt = f'target."{fkey}" = source."{fkey}"'
+
+        for key in key_list:
+            stmt += f' AND target."{key}" = source."{key}"'
 
         return stmt
 
@@ -323,18 +319,32 @@ class MergeSQLOperator(BaseSQLOperator):
         str
             The UPDATE clause for the MERGE statement.
         """
-        stmt = """ 
-                WHEN MATCHED THEN
-                UPDATE SET 
+
+        """does something sensible with an iterable of numbers, 
+        or just one number
+        """
+        
+        if isinstance(columns, str):  # make it a 1-tuple
+            columns = (columns,)
+
+        if not isinstance(columns, Iterable):
+            raise TypeError("Argument set_ must be a <str> or <Column> or a Iterable of either")
+
+        target_string = [
+            f'target."{col.name}"' for col in self.validate_columns(table, columns)
+        ]
+        # NOT VERY EFFICIENT. But maybe necessary if we ever want to merge diff schemas.
+        source_string = [col.replace("target.", "source.") for col in target_string]
+
+        stmt = f""" 
+                WHEN MATCHED AND EXISTS 
+                (
+                SELECT {', '.join(target_string)}
+                EXCEPT
+                SELECT {', '.join(source_string)}
+                ) THEN
+                UPDATE SET {','.join([str1 + '=' + str2 for str1, str2 in zip(target_string,source_string)])}
                 """
-
-        cols = self.validate_columns(table, columns)
-
-        f_col = next(cols)
-        stmt += f'target."{f_col.name}" =  source."{f_col.name}"'
-
-        for col in cols:
-            stmt += f', target."{col.name}" =  source."{col.name}"'
 
         return stmt
 
@@ -391,16 +401,12 @@ class MergeSQLOperator(BaseSQLOperator):
                 """
 
         if set_:
-            update_stmt = self.generate_update_clause(table=source_table, columns=set_)
-            sql += update_stmt
+            sql += self.generate_update_clause(table=source_table, columns=set_)
 
         return sql + " ;"
 
     @staticmethod
-    def _genenerate_partition_stmt(
-        source_table,
-        index_where
-    ) -> str:
+    def _genenerate_partition_stmt(source_table, index_where) -> str:
         if index_where:
             return f""" 
             ( 

@@ -1,18 +1,17 @@
+from json import dumps
 from typing import Any, Union
 
 import requests
+from hooks.custom_base import CustomBaseHook, Method
 from requests import Session
 
 from airflow.exceptions import AirflowException
-from airflow.hooks.base import BaseHook
-from hooks.custom_base import CustomBaseHook, Method
 
 
 class CoreHook(CustomBaseHook):
-
     @property
     def allowed_methods(self):
-        return Method['GET']
+        return Method["GET"]
 
     def __init__(self, conn_id, method="GET", **kwargs) -> None:
         super().__init__(method=method, **kwargs)
@@ -23,8 +22,7 @@ class CoreHook(CustomBaseHook):
     def get_token(login, password, session, base_url):
         params = {"usuario": login, "password": password}
         response = session.request("GET", base_url + "/token", params=params)
-
-        return response.json()["AcessToken"]
+        return response.json()["AccessToken"]
 
     def build_session(self):
         if not self.session:
@@ -127,6 +125,14 @@ class CoreHook(CustomBaseHook):
 
         try:
             response = session.send(prepped_request, **send_kwargs)
+
+            body_json = response.json()
+            # Not sure if this is the best option. Maybe we can just add a processing step in the Operator. But anyway.
+            error_code = body_json.pop("Error", None)
+            response._content = dumps(body_json).encode()
+
+            if error_code:
+                self.log.info("Error code returned: %s", error_code)
 
             if extra_options.get("check_response", True):
                 self.check_response(response)
