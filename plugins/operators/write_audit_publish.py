@@ -1,3 +1,4 @@
+import re
 from typing import Any, Generator, Iterable, Sequence
 
 from sqlalchemy import Column, Table
@@ -7,7 +8,9 @@ from airflow.models.xcom_arg import XComArg
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator
 from airflow.utils.context import Context
 
-from typing import Iterable
+
+def provide_status(context):
+    return f"{context.get('dag')}/{context.get('run_id')}"
 
 
 class InsertSQLOperator(BaseSQLOperator):
@@ -64,10 +67,11 @@ class InsertSQLOperator(BaseSQLOperator):
         conn_id: str | None = None,
         database: str | None = None,
         table: DeclarativeMeta | Table,
-        values: dict[str, Any] | XComArg,
+        values: dict[str, Any] | XComArg | list,
         engine_kwargs: dict | None = None,
         normalize: bool = True,
         data_keys: dict | Iterable[dict] | None = None,
+        write_wap_enabled: bool = True,
         **kwargs,
     ) -> None:
         self.table = table
@@ -83,9 +87,14 @@ class InsertSQLOperator(BaseSQLOperator):
             conn_id=conn_id,
             **kwargs,
         )
+        self.write_wap_enabled = write_wap_enabled
 
     def _invoke_pre_processing(
-        self, table: Table, normalize: bool, data_keys, many=False
+        self,
+        table: Table,
+        data_keys,
+        status,
+        many=False,
     ) -> None:
 
         if isinstance(self.values, list):
@@ -119,18 +128,19 @@ class InsertSQLOperator(BaseSQLOperator):
             self.log.info("Replacing data keys %s", data_keys)
             self.values = self._replace_keys(self.values, data_keys, many)
 
-        if normalize:
-            # Deletes extra keys and create key value pair with NULL in the missing keys
+        # Deletes extra keys and create key value pair with NULL in the missing keys
+        if self.normalize:
             self.log.info("Normalizing values")
 
-            self.out = set()
-            self.values = self._normalize_dict(self.values, columns, many)
+        self.out = set()
+        self.values = self._normalize_dict(self.values, columns, status, many)
 
-            if self.out:
-                self.log.info("Removed extra keys %s", list(self.out))
+        if self.out:
+            self.log.info("Removed extra keys %s", list(self.out))
 
     @staticmethod
     def _replace_keys(value, data_keys, many: bool = False):
+
         if many and value is not None:
             return [
                 InsertSQLOperator._replace_keys(val, data_keys, many=False)
@@ -142,7 +152,7 @@ class InsertSQLOperator(BaseSQLOperator):
 
         return value
 
-    def _normalize_dict(self, value, columns, many: bool = False):
+    def _normalize_dict(self, value, columns, status, many: bool = False):
         """
         Normalize all dictionaries in value to ensure that it contains all expected keys for the SQL model.
 
@@ -163,16 +173,30 @@ class InsertSQLOperator(BaseSQLOperator):
 
         """
         if many and value is not None:
-            return [self._normalize_dict(val, columns, many=False) for val in value]
+            return [
+                self._normalize_dict(val, columns, status, many=False) for val in value
+            ]
 
-        to_remove = columns - value.keys()
-        value.update((col, None) for col in to_remove)
-        self.out.update(to_remove)
+        value["status_t3"] = status
+
+        if self.normalize:
+
+            insert_none = columns - value.keys()
+            value.update((col, None) for col in insert_none)
+
+            to_remove = value.keys() - columns
+            [value.pop(col) for col in to_remove]
+
+            self.out.update(to_remove)
 
         return value
 
     def execute(self, context: Context) -> None:
         hook = self.get_db_hook()
+
+        status = 1
+        if self.write_wap_enabled:
+            status = provide_status(context)
 
         if "fast_executemany" not in self.engine_kwargs:
             self.engine_kwargs.update({"fast_executemany": True})
@@ -186,7 +210,9 @@ class InsertSQLOperator(BaseSQLOperator):
         with engine.connect() as conn:
 
             self._invoke_pre_processing(
-                data_keys=self.data_keys, table=self.table, normalize=self.normalize
+                data_keys=self.data_keys,
+                table=self.table,
+                status=status,
             )
 
             conn.execute(self.table.insert(), self.values)
@@ -235,6 +261,7 @@ class MergeSQLOperator(BaseSQLOperator):
         index_where: str | None = None,
         set_: Iterable[Column] | Iterable[str] | None = None,
         holdlock: bool = True,
+        write_wap_enabled: bool = True,
         **kwargs,
     ) -> None:
 
@@ -251,7 +278,8 @@ class MergeSQLOperator(BaseSQLOperator):
         self.holdlock = holdlock
         self.index_elements = index_elements
         self.index_where = index_where
-        self.set_ = self.set_
+        self.set_ = set_
+        self.write_wap_enabled = write_wap_enabled
 
     @staticmethod
     def validate_columns(
@@ -292,7 +320,7 @@ class MergeSQLOperator(BaseSQLOperator):
         str
             The ON clause for the MERGE statement.
         """
-        fkey, key_list = primary_keys[0], primary_keys[:1]
+        fkey, key_list = primary_keys[0], primary_keys[1:]
 
         stmt = f'target."{fkey}" = source."{fkey}"'
 
@@ -301,9 +329,7 @@ class MergeSQLOperator(BaseSQLOperator):
 
         return stmt
 
-    def generate_update_clause(
-        self, table: Table, columns: Iterable[str] | Iterable[Column]
-    ) -> str:
+    def generate_update_clause(self, table: Table, columns: tuple) -> str:
         """
         Generate the UPDATE clause for the MERGE statement using the columns to be updated.
 
@@ -323,12 +349,17 @@ class MergeSQLOperator(BaseSQLOperator):
         """does something sensible with an iterable of numbers, 
         or just one number
         """
-        
+
         if isinstance(columns, str):  # make it a 1-tuple
             columns = (columns,)
 
         if not isinstance(columns, Iterable):
-            raise TypeError("Argument set_ must be a <str> or <Column> or a Iterable of either")
+            raise TypeError(
+                "Argument set_ must be a <str> or <Column> or a Iterable of either"
+            )
+
+        # we just add status, so if there is an update, we also update the status column.
+        columns += ("status_t3",)
 
         target_string = [
             f'target."{col.name}"' for col in self.validate_columns(table, columns)
@@ -337,7 +368,7 @@ class MergeSQLOperator(BaseSQLOperator):
         source_string = [col.replace("target.", "source.") for col in target_string]
 
         stmt = f""" 
-                WHEN MATCHED AND EXISTS 
+                WHEN MATCHED AND EXISTS
                 (
                 SELECT {', '.join(target_string)}
                 EXCEPT
@@ -401,6 +432,7 @@ class MergeSQLOperator(BaseSQLOperator):
                 """
 
         if set_:
+            # if set_, we have to also update the status column
             sql += self.generate_update_clause(table=source_table, columns=set_)
 
         return sql + " ;"
@@ -443,3 +475,99 @@ class MergeSQLOperator(BaseSQLOperator):
             Sucessfuly merged tables with source : {self.source_table.name} and target : {self.target_table.name}
             { "With partition: {}".format(self.index_where) if self.index_where else ""}"""
         )
+
+
+class AuditSQLOperator(BaseSQLOperator):
+    """
+    e.g.
+
+    SELECT status
+    FROM  exchange_rates
+    WHERE (CASE WHEN value > 5 THEN 1 ELSE 0 END)
+    
+    HERE 0 WILL NOT BE PUBLISHED.
+
+    """
+
+    template_fields = ("sql",)
+    template_fields_renderers = {"sql": "sql"}
+
+    def __init__(
+        self,
+        *,
+        sql: str,
+        conn_id: str | None = None,
+        table: str | Table | DeclarativeMeta | None = None,
+        database: str | None = None,
+        holdlock: bool = True,
+        publish_as_default: bool = True,
+        **kwargs,
+    ) -> None:
+
+        self.sql = sql
+        self.holdlock = holdlock
+        self.publish_as_default = publish_as_default
+        self.table = table
+        hook_params = kwargs.pop("hook_params", {})
+        kwargs["hook_params"] = {"database": database, **hook_params}
+
+        super().__init__(
+            conn_id=conn_id,
+            **kwargs,
+        )
+
+    def execute(self, context: Context):
+        hook = self.get_db_hook()
+
+        status = provide_status(context)
+
+        for statement in self.parse_sql(self.sql, status):
+            hook.run(statement, handler=None)
+
+        if self.publish_as_default:
+            if not self.table:
+                raise ValueError("Publish as default requires Table as argument")
+
+            # Transform into Table Object for consistency
+            if isinstance(self.table, (DeclarativeMeta, TableClause)):
+                self.table = getattr(self.table, "__table__").name
+
+            self.log.info("Publishing non-failed rows in table: %s", self.table)
+
+            hook.run(
+                f""" 
+            WITH CTE AS (
+            SELECT status_t3 from 
+                {self.table}  WHERE status_t3 = '{status}'
+            ) UPDATE CTE 
+            SET status_t3 = 1 
+
+            """,
+                handler=None,
+            )
+
+    @staticmethod
+    def parse_sql(sql_code, status) -> list[str | Any]:
+        # Split the code into individual statements
+
+        statements = re.split(r";\s*", sql_code)
+
+        # Remove empty statements
+        statements = [
+            f""" 
+            WITH CTE AS  (
+                SELECT status_t3
+                    FROM (
+                        {statement.strip()} =0
+                        ) as subquery
+                WHERE  status_t3= '{status}'
+                )
+                UPDATE CTE
+                SET status_t3 =0
+                """
+            for statement in statements
+            if statement.split()
+        ]
+
+        # Return the list of parsed statements
+        return statements
