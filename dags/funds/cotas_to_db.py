@@ -1,23 +1,37 @@
 from typing import Any
 
 from flask_api.models.funds import FundsValues, StageFundsValues
-from operators.api import BritechOperator
-from operators.custom_sql import MSSQLOperator, SQLCheckOperator
-from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
-from pendulum import datetime
-
+from sqlalchemy.orm.exc import UnmappedInstanceError
+from plugins.operators.api import BritechOperator
+from plugins.operators.custom_sql import MSSQLOperator, SQLCheckOperator
+from plugins.operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
+from airflow.operators.python import PythonOperator
 from airflow import DAG
 from airflow.decorators import task
 from airflow.exceptions import AirflowFailException
 from airflow.models.baseoperator import chain
 from airflow.utils.task_group import TaskGroup
 from airflow.exceptions import AirflowSkipException
+from pendulum import datetime
+
+
 
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 4, 21, tz="America/Sao_Paulo"),
 }
 
+
+ # Status : Divulgado
+
+
+# Data Ref D-1
+# Status Divulgado
+
+
+# Data Ref  = Data Dia
+# Status whatever
+  
 
 with DAG(
     "cotas_to_db",

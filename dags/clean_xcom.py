@@ -5,7 +5,6 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.models.baseoperator import chain
 from airflow.providers.common.sql.operators.sql import BranchSQLOperator
-
 default_args = {
     "owner": "airflow",
     "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),

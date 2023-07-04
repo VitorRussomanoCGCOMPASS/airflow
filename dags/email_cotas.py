@@ -1,10 +1,10 @@
-from operators.api import BritechOperator
-from operators.custom_sendgrid import SendGridOperator
-from operators.custom_sql import MSSQLOperator, SQLCheckOperator
-from operators.file_share import FileShareOperator
+from plugins.operators.api import BritechOperator
+from plugins.operators.custom_sendgrid import SendGridOperator, EmailObject
+from plugins.operators.custom_sql import MSSQLOperator, SQLCheckOperator
+from plugins.operators.file_share import FileShareOperator
 from pendulum import datetime
-from sensors.britech import BritechIndicesSensor
-from sensors.sql import SqlSensor
+from plugins.sensors.britech import BritechIndicesSensor
+from plugins.sensors.sql import SqlSensor
 from FileObjects import HTML, JSON
 from airflow.exceptions import AirflowFailException
 from airflow import DAG
@@ -13,7 +13,25 @@ from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from sendgrid.helpers.mail import GroupId
+from plugins.operators.api import CoreAPIOperator
+from airflow.utils.trigger_rule import TriggerRule
 
+
+
+email_schema= {
+    "type": "object",
+    "properties": {
+        "Emails": {
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "email",
+            },
+            "minItems": 1
+        },
+    },
+    "required": ["Emails"] 
+}
 
 # TODO : add group id.
 # TODO :  CHECK FOR FUNDS / CHECK FOR INDICES MUST CHECK IF ITS STRING OR WHATEVER.
@@ -21,16 +39,18 @@ from sendgrid.helpers.mail import GroupId
 
 default_args = {
     "owner": "airflow",
-    "start_date": datetime(2023, 1, 1, tz="America/Sao_Paulo"),
+    "start_date": datetime(2023, 6 , 7, tz="America/Sao_Paulo"),
     "conn_id": "mssql-default",
     "database": "DB_Brasil",
     "mode": "reschedule",
-    "timeout": 60 * 30,
+    "poke_interval" : 60 * 60 , 
+    "timeout": 60 * 60  * 4,
     "max_active_runs": 1,
     "catchup": False,
     "do_xcom_push": True,
     "hook_params": {"database": "DB_Brasil"},
 }
+
 
 
 def _process_xcom(ids: list[list[str]]) -> str:
@@ -90,7 +110,7 @@ def _merge(
     """
     Merges funds_data and complementary_data (funds name, inception date and return since inception) together
     and optionally filters the returns of the fund that has less than 190 days since inception in conformity of regulation.
-
+/
 
     Parameters
     ----------
@@ -101,7 +121,7 @@ def _merge(
     Returns
     -------
     str
-        Json formatted result
+        Json formatted result/
     """
     import pandas
 
@@ -119,7 +139,7 @@ def _merge(
         ).dt.days
 
         data.loc[
-            data.diff_days < 190,
+            data.diff_days < 180,
             [
                 "RentabilidadeMes",
                 "RentabilidadeDia",
@@ -162,8 +182,7 @@ def _raise_if_empty(list_ids: list) -> bool | None:
     from itertools import chain
 
     ids = list(chain(*list_ids))
-    print(ids)
-    print(type(ids))
+
     if not ids:
         raise AirflowFailException("List of ids is empty")
     return True
@@ -321,7 +340,7 @@ with DAG(
 
 with DAG(
     "email_cotas_pl_pm",
-    schedule="10 16 * * MON-FRI",
+    schedule="10 14 * * MON-FRI",
     catchup=False,
     default_args=default_args,
     template_searchpath=["/opt/airflow/include/sql/mssql"],
@@ -381,7 +400,7 @@ with DAG(
                     (SELECT id FROM WorkTable )AND Data ='{{macros.template_tz.convert_ts(data_interval_start)}}') 
                     >= {{params.percentage}}  * (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end;
                     """,
-            parameters={"percentage": 0.6},
+            parameters={"percentage": 0.7},
         )
 
         select_d1_funds = MSSQLOperator(
@@ -480,10 +499,15 @@ with DAG(
         do_xcom_push=True,
     )
 
+    fetch_contacts = CoreAPIOperator(
+            task_id = "fetch_contacts",
+            endpoint = "/ContactoMarca",
+            request_params = {"nombreMarca":"Email_Cotas","nickname":" ","idContrato":" ","idCuenta":" "},json_schema = email_schema)
+
     send_email = SendGridOperator(
         task_id="send_email",
         subject="CG - COMPASS - COTAS - {{macros.template_tz.convert_ts(data_interval_start)}}",
-        to=["vitor.ibanez@cgcompass.com", "vitorrussomano@outlook.com"],
+        to = EmailObject(fetch_contacts.output),
         html_content=render_template.output,
         parameters={"reply_to": "vitor.ibanez@cgcompass.com", "asm": GroupId(18501)},
         is_multiple=True,
@@ -491,7 +515,7 @@ with DAG(
 
 
     chain(is_business_day, [indices, funds])
-    chain(is_business_day, fetch_template, render_template, send_email)
+    chain(is_business_day, fetch_template, render_template, fetch_contacts, send_email)
 
 
 with DAG(
@@ -787,6 +811,9 @@ with DAG(
     chain([funds, indices], report)
 
 
+
+
+
 with DAG(
     "email_cotas_pl_evening_complete",
     schedule="38 16 * * MON-FRI",
@@ -804,20 +831,41 @@ with DAG(
     with TaskGroup(group_id="all-funds") as all_funds:
 
         active_funds_sensor = SqlSensor(
-            task_id="complete_funds_sql_sensor",
-            sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
-            do_xcom_push=False,
-        )  # type: ignore
-
-        select_active_funds = MSSQLOperator(
-            task_id="complete_fetch_funds",
-            sql="declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_ACTIVE_FUNDS @date",
+                task_id="complete_funds_sql_sensor",
+                sql="""declare @date date set @date = '{{macros.template_tz.convert_ts(data_interval_start)}}' EXEC dbo.SP_FUNDS_SENSOR @date""",
+                do_xcom_push=False,
+            )  # type: ignore
+        
+        # This will be executed in case of a failure. 
+        percentage_of_funds_sensor = SqlSensor(
+            task_id="percentage_of_funds_sensor",
+            sql=""" 
+                WITH WorkTable(id) as 
+                (SELECT britech_id from funds where closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}' or closure_date is null)
+                SELECT case when (SELECT COUNT(*) FROM funds_values
+                WHERE "IdCarteira" IN 
+                    (SELECT id FROM WorkTable )AND Data ='{{macros.template_tz.convert_ts(data_interval_start)}}') 
+                    >= {{params.percentage}}  * (SELECT COUNT(*) FROM WorkTable) then 1 else 0 end;
+                    """,
+            parameters={"percentage": 0.7},
+            trigger_rule = TriggerRule.ONE_FAILED
         )
+        
+        select_funds = MSSQLOperator(
+            task_id="select_funds",
+            sql=""" 
+            SELECT string_agg(britech_id,',') as id from funds 
+            JOIN funds_values 
+            ON britech_id= IdCarteira 
+            WHERE 
+            closure_date >= '{{macros.template_tz.convert_ts(data_interval_start)}}' or closure_date is null and Data='{{macros.template_tz.convert_ts(data_interval_start)}}' """,
+            do_xcom_push=True,
+            trigger_rule = TriggerRule.ONE_SUCCESS)
 
         check_for_funds = PythonOperator(
             task_id="check_for_funds",
             python_callable=_raise_if_empty,
-            op_kwargs={"list_ids": select_active_funds.output},
+            op_kwargs={"list_ids": select_funds.output},
             do_xcom_push=False,
         )
 
@@ -825,7 +873,7 @@ with DAG(
             task_id="fetch_funds_return",
             endpoint="/Fundo/BuscaRentabilidadeFundos",
             request_params={
-                "idCarteiras": select_active_funds.output,
+                "idCarteiras": select_funds.output,
                 "dataReferencia": "{{macros.template_tz.convert_ts(data_interval_start)}}",
             },
         )
@@ -834,7 +882,7 @@ with DAG(
             task_id="process_xcom",
             python_callable=_process_xcom,
             do_xcom_push=True,
-            op_kwargs={"ids": select_active_funds.output},
+            op_kwargs={"ids": select_funds.output},
         )
 
         fetch_complementary_funds_data = MSSQLOperator(
@@ -856,9 +904,12 @@ with DAG(
                 "filter": False,
             },
         )
+
+        chain(active_funds_sensor, percentage_of_funds_sensor, select_funds)
+
         chain(
             active_funds_sensor,
-            select_active_funds,
+            select_funds,
             check_for_funds,
             [fetch_funds_return, fetch_complementary_funds_data],
             merge,

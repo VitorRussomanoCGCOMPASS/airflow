@@ -42,14 +42,14 @@ with DAG(
         },
         mode="reschedule",
         timeout=60 * 30,
-    )
+    )   
 
     fetch_cotista_op = BritechOperator(
         task_id="fetch_cotista_op",
         endpoint="/Fundo/OperacaoCotistaAnalitico",
         request_params={
             "dataInicio": "{{macros.template_tz.convert_ts(data_interval_start)}}",
-            "dataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),+360)}}",
+            "dataFim": "{{macros.anbima_plugin.forward(macros.template_tz.convert_ts(data_interval_start),+252)}}",
             "idsCarteiras": ";",
         },
         do_xcom_push=True,
@@ -59,6 +59,7 @@ with DAG(
         table=StageCotistaOp,
         values=fetch_cotista_op.output,
     )
+
     string_to_date = MSSQLOperator(
         task_id="string_to_date",
         database="DB_Brasil",
@@ -71,6 +72,11 @@ with DAG(
                     DataAgendamento = cast(DataAgendamento as date), 
                     DataDia = cast(DataDia as date)
                      """,
+    )
+
+    check_for_op = SQLCheckOperator(
+        task_id="check_for_op",
+        sql="SELECT CASE WHEN EXISTS (SELECT * from cotista_op WHERE DataOperacao = '{{macros.template_tz.convert_ts(data_interval_start)}}') THEN 1 ELSE 0 END;",
     )
 
     merge_tables = MergeSQLOperator(
@@ -127,13 +133,12 @@ with DAG(
             "CodigoCategoriaMovimentacao",
             "TipoCotistaMovimentacao",
             "IdBoletaExterna",
-            "DataDia",
             "Status",
             "IdOperacaoAuxiliar",
             "IdCategoriaMovimentacao",
         ),
+        index_where="DataOperacao = '{{macros.template_tz.convert_ts(data_interval_start)}}'",
     )
-
 
     chain(
         is_business_day,
@@ -142,6 +147,7 @@ with DAG(
         fetch_cotista_op,
         push_data,
         string_to_date,
+        check_for_op,
         merge_tables,
     )
 

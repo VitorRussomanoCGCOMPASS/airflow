@@ -1,8 +1,8 @@
 from collections import namedtuple
 
 from flask_api.models.currency import ExchangeRates, StageExchangeRates
-from operators.custom_sql import MSSQLOperator, SQLCheckOperator
-from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
+from plugins.operators.custom_sql import MSSQLOperator, SQLCheckOperator
+from plugins.operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
 from pendulum import datetime
 
 from airflow import DAG
@@ -26,7 +26,7 @@ default_args = {
 }
 
 with DAG(
-    "ws_b3", schedule="00 6 * * MON-FRI", default_args=default_args, catchup=False
+    "usd_b3", schedule="00 6 * * MON-FRI", default_args=default_args, catchup=False
 ):
 
     is_business_day = SQLCheckOperator(
@@ -74,11 +74,6 @@ with DAG(
 
                 date = pendulum.from_format(cupom_limpo.lastUpdate, "DD/MM/YYYY")
                 assert ds
-
-                print(ds)
-                print(type(ds))
-                print(date)
-                print(type(date))
 
                 if ds.is_same_day(date):
                     condition_met = True

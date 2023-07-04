@@ -39,7 +39,7 @@ with DAG(
     def scrape_banxico() -> PokeReturnValue:
         import requests
         from pendulum import parser
-
+ 
         from airflow.operators.python import get_current_context
 
         condition_met = False
@@ -65,13 +65,6 @@ with DAG(
                 date = parser.parse(obj.fecha, strict=False)
                 assert ds
                 
-                
-                print(ds)
-                print(type(ds))
-                print(date)
-                print(type(date))
-
-
                 if ds.is_same_day(date):
 
                     # USD

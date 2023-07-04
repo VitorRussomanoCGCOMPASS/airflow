@@ -1,10 +1,9 @@
 import flask_api.models.anbima as anbima
-from operators.api import AnbimaOperator
-from operators.custom_sql import SQLCheckOperator, MSSQLOperator
-from operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
+from plugins.operators.write_audit_publish import InsertSQLOperator, MergeSQLOperator
 from pendulum import datetime
-from sensors.anbima import AnbimaSensor
-
+from plugins.operators.api import AnbimaOperator
+from plugins.operators.custom_sql import SQLCheckOperator, MSSQLOperator
+from plugins.sensors.anbima import AnbimaSensor
 from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.utils.task_group import TaskGroup
@@ -56,6 +55,7 @@ with DAG(
             task_id="store_vna",
             table=anbima.StageVNA,
             values=fetch_vna.output,
+            write_wap_enabled=False,
         )
 
         check_vna_date = SQLCheckOperator(
@@ -111,6 +111,7 @@ with DAG(
             task_id="store_debentures",
             table=anbima.StageDebentures,
             values=fetch_debentures.output,
+            write_wap_enabled=False,
         )
 
         check_debentures_date = SQLCheckOperator(
@@ -168,11 +169,12 @@ with DAG(
             },
             do_xcom_push=True,
         )
-        
+
         store_cricra = InsertSQLOperator(
             task_id="store_cricra",
             table=anbima.StageCriCra,
             values=fetch_cricra.output,
+            write_wap_enabled=False,
         )
 
         check_cricra_date = SQLCheckOperator(
@@ -229,6 +231,7 @@ with DAG(
             task_id="store_ima",
             table=anbima.StageIMA,
             values=fetch_ima.output,
+            write_wap_enabled=False,
         )
 
         check_ima_date = SQLCheckOperator(
@@ -292,4 +295,4 @@ with DAG(
             """,
     )
 
-    chain(is_business_day, [debentures, ima, cricra, vna],clean_all_stage_tables)
+    chain(is_business_day, [debentures, ima, cricra, vna], clean_all_stage_tables)
